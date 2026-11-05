@@ -1,0 +1,34 @@
+# Class registry. The server derives class_id ONLY from (channel, group_id) using this file —
+# never from message text and never from the LLM.
+#
+# section_prefixes: a document section whose code starts with one of these prefixes (e.g. "GS-02",
+# "AUTO-CLASS-01") belongs to this scope (DECISIONS D-02). Prefixes must be unique across scopes.
+#
+# instructor_contact is internal-only (never sent to students, never logged).
+
+shared_scope:
+  # Chunks with this class_id are retrievable by every class (see DECISIONS.md D-01).
+  id: COMMON
+  name: "Quy định & FAQ chung"
+  section_prefixes: [COMMON]
+
+classes:
+  - id: GS-KPI-01
+    name: "Google Sheets – KPI – Dashboard"
+    enabled: true
+    instructor_name: "Giảng viên lớp Google Sheets (placeholder)"
+    instructor_contact: "TODO"
+    section_prefixes: [GS]
+    groups:
+      - channel: mock
+        external_group_id: grp_gs_kpi_01
+
+  - id: AUTO-N8N-01
+    name: "AI Automation – n8n"
+    enabled: true
+    instructor_name: "Giảng viên lớp AI Automation (placeholder)"
+    instructor_contact: "TODO"
+    section_prefixes: [AUTO]
+    groups:
+      - channel: mock
+        external_group_id: grp_auto_n8n_01

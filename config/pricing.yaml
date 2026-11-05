@@ -1,0 +1,27 @@
+# Token prices in USD per 1,000,000 tokens.
+#
+# DO NOT trust these numbers: they are placeholders (null = unknown, cost will be reported as null).
+# Fill them in by hand from the official pricing pages and record the date you checked:
+#   - Gemini:  https://ai.google.dev/pricing
+#   - OpenAI:  https://openai.com/api/pricing
+# Model names must match LLM_MODEL / EMBEDDING_MODEL exactly.
+
+checked_at: null   # e.g. "2026-11-05"
+currency: USD
+unit_tokens: 1000000
+
+models:
+  fake-llm:
+    input: 0
+    output: 0
+  fake-embedding:
+    input: 0
+  # Chosen models (DECISIONS D-35). Fill in from the official OpenAI pricing page, then set checked_at.
+  gpt-6-luna:
+    input: null
+    output: null
+  gpt-5.6-luna:
+    input: null
+    output: null
+  text-embedding-3-small:
+    input: null
