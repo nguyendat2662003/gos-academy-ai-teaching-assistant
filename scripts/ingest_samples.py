@@ -32,7 +32,8 @@ def discover(include_derived: bool) -> list[tuple[str, Path]]:
     for root in roots:
         for folder in sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith("_")):
             for path in sorted(folder.iterdir()):
-                if path.suffix.lower() in SUPPORTED_SUFFIXES:
+                # "~$x.docx" = Word/Excel lock file of an open document, ".x" = hidden: not material
+                if path.suffix.lower() in SUPPORTED_SUFFIXES and not path.name.startswith(("~$", ".")):
                     files.append((folder.name, path))
     return files
 

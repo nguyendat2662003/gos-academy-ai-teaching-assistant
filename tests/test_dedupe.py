@@ -35,7 +35,8 @@ async def test_concurrent_duplicate_gives_one_job_and_one_outbox_row(client, fak
     assert len(rows) == 1 and rows[0].event_id == "evt_dup_concurrent"
 
     outcomes = (await db_session.execute(select(RequestLog.outcome).order_by(RequestLog.id))).scalars().all()
-    assert sorted(outcomes) == ["answered", "duplicate"]
+    # empty knowledge base in this test -> the single processed copy is handed off to an instructor
+    assert sorted(outcomes) == ["duplicate", "handoff"]
 
 
 async def test_many_concurrent_copies(client, fake_queue) -> None:
@@ -80,6 +81,6 @@ async def test_end_to_end_with_real_arq_worker(clean_state, db_session) -> None:
 
     rows = await _outbox(db_session)
     assert len(rows) == 1
-    assert "Webhook có bị người lạ gọi không?" in rows[0].text
+    assert rows[0].kind == "handoff" and "Mã yêu cầu: #H-" in rows[0].text  # no documents indexed here
     count = (await db_session.execute(select(func.count()).select_from(RequestLog))).scalar()
-    assert count == 2  # one duplicate + one answered
+    assert count == 2  # one duplicate + one handoff

@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Demo 2 nhóm chat – Trợ giảng AI{% endblock %}
+{% block head %}
+<style nonce="{{ nonce }}">
+  .panes { display:grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap:16px; }
+  .pane { display:flex; flex-direction:column; height:calc(100vh - 150px); min-height:420px; }
+  .pane h2 small { font-weight:normal; color:var(--muted); }
+  .log { flex:1; overflow-y:auto; background:#eef1f5; border-radius:8px; padding:10px; display:flex; flex-direction:column; gap:8px; }
+  .bubble { max-width:85%; padding:8px 10px; border-radius:10px; white-space:pre-wrap; word-break:break-word; }
+  .bubble.student { align-self:flex-end; background:#dbeafe; }
+  .bubble.bot { align-self:flex-start; background:#fff; border:1px solid var(--line); }
+  .meta { font-size:11px; color:var(--muted); margin-bottom:2px; }
+  .status { align-self:flex-end; font-size:11px; color:var(--muted); margin-top:-6px; }
+  .compose { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
+  .compose textarea { min-height:56px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chips button { padding:2px 8px; font-size:12px; }
+</style>
+{% endblock %}
+{% block content %}
+<p class="muted">Mô phỏng nhóm Zalo. Tin gửi từ đây được server ký HMAC và đi qua đúng webhook <code>/webhooks/mock</code>;
+  trình duyệt không bao giờ thấy WEBHOOK_SECRET. Câu trả lời của bot được đọc lại từ outbox. Cần worker đang chạy.</p>
+<div class="panes">
+  {% for g in groups %}
+  <section class="card pane" data-group="{{ g.group_id }}">
+    <h2>{{ g.class_name }} <small>· {{ g.class_id }} · {{ g.group_id }}</small></h2>
+    <div class="log"></div>
+    <div class="compose">
+      <div class="chips">
+        {% for q in samples.get(g.class_id, []) + samples.get("*", []) %}
+        <button type="button" class="secondary chip" data-text="{{ q }}">{{ q }}</button>
+        {% endfor %}
+      </div>
+      <div class="row">
+        <label class="muted">Học viên <input class="user" value="hv_{{ loop.index }}1" size="8" maxlength="64"></label>
+      </div>
+      <textarea class="text" maxlength="2000">/hoi </textarea>
+      <div class="row"><button type="button" class="send">Gửi</button><span class="msg"></span></div>
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ nonce }}">
+  const KIND = { answer: "trả lời", partial: "trả lời một phần", handoff: "chuyển giảng viên", refusal: "từ chối",
+                 error: "lỗi", notice: "thông báo", instructor: "giảng viên" };
+  const panes = {};
+  document.querySelectorAll(".pane").forEach((pane) => { panes[pane.dataset.group] = pane; });
+  let lastId = 0, polling = false;
+
+  function scrollDown(log) { log.scrollTop = log.scrollHeight; }
+  function addBot(row) {
+    const pane = panes[row.group_id];
+    if (!pane) return;
+    const log = pane.querySelector(".log");
+    log.append(h("div", { class: "bubble bot" },
+      h("div", { class: "meta" }, row.kind === "instructor" ? "Giảng viên (qua bot) " : "Trợ giảng AI ",
+        h("span", { class: "badge b-" + row.kind }, KIND[row.kind] || row.kind)),
+      row.text));
+    scrollDown(log);
+  }
+  async function poll() {
+    if (polling || !store.get()) return;
+    polling = true;
+    try {
+      const rows = await (await api("/demo/api/messages?after=" + lastId)).json();
+      for (const row of rows) { addBot(row); lastId = Math.max(lastId, row.id); }
+    } catch (e) { /* key missing or server restarting: retry on the next tick */ }
+    polling = false;
+  }
+  async function send(pane) {
+    const textEl = pane.querySelector(".text"), out = pane.querySelector(".msg"), log = pane.querySelector(".log");
+    const text = textEl.value.trim(), user = pane.querySelector(".user").value.trim();
+    if (!text) return;
+    log.append(h("div", { class: "bubble student" }, h("div", { class: "meta" }, user), text));
+    const status = h("div", { class: "status" }, "đang gửi…");
+    log.append(status); scrollDown(log);
+    try {
+      const data = await (await api("/demo/api/send", { method: "POST",
+        json: { group_id: pane.dataset.group, user_id: user, text } })).json();
+      const r = data.result || {};
+      status.textContent = "webhook " + data.http_status + ": " + (r.status || "?") + (r.reason ? " (" + r.reason + ")" : "");
+      textEl.value = "/hoi "; say(out, "");
+    } catch (e) { status.textContent = "không gửi được"; say(out, e.message, "err"); }
+  }
+  for (const pane of Object.values(panes)) {
+    pane.querySelector(".send").addEventListener("click", () => send(pane));
+    pane.querySelector(".text").addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); send(pane); }
+    });
+    pane.querySelectorAll(".chip").forEach((chip) => chip.addEventListener("click", () => {
+      pane.querySelector(".text").value = "/hoi " + chip.dataset.text; pane.querySelector(".text").focus();
+    }));
+  }
+  document.addEventListener("keychange", poll);
+  setInterval(poll, 1500); poll();
+</script>
+{% endblock %}

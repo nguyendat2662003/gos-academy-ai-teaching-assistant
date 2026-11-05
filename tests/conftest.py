@@ -164,3 +164,54 @@ async def client(clean_state: None, fake_queue: FakeQueue):
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()
+
+
+SAMPLE_FILES = {
+    "GS-KPI-01": "data/samples/GS-KPI-01/01_Giao_trinh_Google_Sheets_KPI_Dashboard.docx",
+    "AUTO-N8N-01": "data/samples/AUTO-N8N-01/02_Giao_trinh_AI_Automation_n8n.docx",
+    "COMMON": "data/samples/COMMON/03_FAQ_Quy_dinh_lop_hoc_GIA_LAP.docx",
+}
+
+
+async def ingest_file(session, path: str, scope: str):  # type: ignore[no-untyped-def]
+    from pathlib import Path
+
+    from app.core.classes import get_registry
+    from app.ingestion import indexer
+    from app.providers.registry import get_embedding_provider
+
+    data = Path(path).read_bytes()
+    return await indexer.index_file(
+        session,
+        data=data,
+        filename=Path(path).name,
+        origin_scope=scope,
+        embedder=get_embedding_provider(),
+        registry=get_registry(),
+    )
+
+
+@pytest.fixture
+async def kb(clean_state, db_session) -> None:
+    """The real sample material indexed with the fake embedding."""
+    for scope, path in SAMPLE_FILES.items():
+        await ingest_file(db_session, path, scope)
+
+
+@pytest.fixture
+def llm(monkeypatch):  # type: ignore[no-untyped-def]
+    """A fresh FakeLLM wired into the worker and /api/ask; inspect `.calls` to see every prompt sent.
+
+    Also: threshold 0 (the fake embedding's cosine scores are not calibrated; the threshold has its own test)
+    and no retry delay."""
+    from app.api import ask
+    from app.core.config import get_settings
+    from app.providers.fake_llm import FakeLLM
+    from app.workers import tasks
+
+    fake = FakeLLM()
+    monkeypatch.setattr(tasks, "get_llm_provider", lambda: fake)
+    monkeypatch.setattr(ask, "get_llm_provider", lambda: fake)
+    monkeypatch.setattr(get_settings(), "retrieval_min_score", 0.0)
+    monkeypatch.setattr(get_settings(), "llm_retry_base_delay", 0.0)
+    return fake

@@ -162,6 +162,7 @@ class Document(Base):
     filename: Mapped[str] = mapped_column(String(255))
     storage_path: Mapped[str | None] = mapped_column(String(512))  # stored original, used by reindex
     embedding_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    embedding_model: Mapped[str | None] = mapped_column(String(128))  # priced at query time (stats)
     doc_code: Mapped[str | None] = mapped_column(String(64))  # e.g. DOC-GS-01, used in citations
     source_type: Mapped[str] = mapped_column(String(16))
     version: Mapped[int] = mapped_column(Integer, default=1)
@@ -188,6 +189,8 @@ class FaqEntry(Base):
     approved_by: Mapped[str | None] = mapped_column(String(255))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    embedding_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    embedding_model: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = _now()
 
 
@@ -284,7 +287,10 @@ class Outbox(Base):
 
 class RequestLog(Base):
     __tablename__ = "request_logs"
-    __table_args__ = (Index("ix_request_logs_class_created", "class_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_request_logs_class_created", "class_id", "created_at"),
+        Index("ix_request_logs_created", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     request_id: Mapped[str] = mapped_column(String(32), index=True)
@@ -299,6 +305,7 @@ class RequestLog(Base):
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     embedding_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    embedding_model: Mapped[str | None] = mapped_column(String(128))
     cost_usd: Mapped[float | None] = mapped_column(Numeric(14, 8))
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     error_code: Mapped[str | None] = mapped_column(String(64))

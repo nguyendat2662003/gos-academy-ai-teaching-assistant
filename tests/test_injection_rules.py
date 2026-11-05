@@ -45,7 +45,7 @@ def test_course_content_is_not_flagged(text: str) -> None:
 
 
 def test_no_sample_chunk_is_flagged() -> None:
-    files = [p for p in Path("data/samples").glob("[!_]*/*.docx")]
+    files = [p for p in Path("data/samples").glob("[!_]*/*.docx") if not p.name.startswith("~$")]
     assert len(files) == 3
     flagged = [c.location for f in files for c in chunk_document(parse_file(f)) if c.flagged_injection]
     assert flagged == []

@@ -31,3 +31,6 @@ uploads/
 
 # Assignment brief from GOS Academy: kept locally, not published (place it at docs/de_bai.pdf)
 docs/de_bai.pdf
+
+# Office lock files (created while a document is open in Word/Excel)
+~$*

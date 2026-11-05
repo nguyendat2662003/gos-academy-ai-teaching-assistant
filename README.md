@@ -7,9 +7,28 @@ không đủ căn cứ.
 - Đặc tả: [CLAUDE.md](CLAUDE.md) · Đề bài: `docs/de_bai.pdf` (không đưa lên repo; đặt file vào đường dẫn này khi cần)
 - Quyết định kỹ thuật: [docs/DECISIONS.md](docs/DECISIONS.md)
 
-> Trạng thái: **Phase 3 (kho tri thức)** — webhook mô phỏng (Phase 2) + parse DOCX/PDF/XLSX, chunk theo mục,
-> embedding (openai/gemini/fake), index có versioning, API quản lý tài liệu. Worker vẫn trả lời "echo";
-> truy xuất & agent ở Phase 4.
+> Trạng thái: **Phase 6 (giám sát & chi phí)**: webhook mô phỏng, kho tri thức có versioning, truy xuất hybrid
+> lọc theo lớp, che secret, guard, chính sách, LLM trả JSON có kiểm tra trích dẫn, ngữ cảnh hội thoại,
+> retry/timeout, `/api/ask`, ticket + duyệt FAQ, `/admin/ui`, `/demo`, `/admin/stats` (token, latency, chi phí),
+> `/admin/security-events`. Đánh giá & tài liệu ở Phase 7.
+
+## Bot xử lý một câu hỏi thế nào
+
+`/hoi …` → che secret → guard (injection / đòi bí mật / lớp khác → từ chối) → lịch sử (cùng lớp, có TTL)
+→ viết lại câu hỏi nối tiếp → truy xuất hybrid (chỉ lớp đó + COMMON) → chủ đề nhạy cảm không có căn cứ → chuyển
+giảng viên → điểm < `RETRIEVAL_MIN_SCORE` → chuyển giảng viên (không gọi LLM) → LLM trả JSON (timeout + retry)
+→ kiểm tra (JSON, `answerable`, trích dẫn thuộc tập vừa truy xuất) → ghép câu trả lời + nguồn từ metadata.
+
+| Outcome | Khi nào | Học viên nhận |
+|---|---|---|
+| `answered` | đủ căn cứ | câu trả lời + `📚 Nguồn: …` |
+| `partial` | chỉ một phần có căn cứ | phần trả lời được + "Phần “X” chưa có trong tài liệu…" + mã `#H-…` |
+| `handoff` | `no_context`, `low_confidence`, `policy` | thông báo đã chuyển giảng viên + mã `#H-…` |
+| `refused` | injection, đòi bí mật, đòi dữ liệu lớp khác | từ chối lịch sự (+ `security_events`) |
+| `error` | LLM lỗi sau khi đã retry | xin lỗi + mã `#H-…` (ticket `error`) |
+
+Mọi câu chữ gửi học viên nằm ở [app/agent/messages.py](app/agent/messages.py); prompt nằm ở
+[app/agent/prompts.py](app/agent/prompts.py).
 
 ## Yêu cầu
 
@@ -97,6 +116,9 @@ Quy tắc:
 
 Script tự ký HMAC bằng `WEBHOOK_SECRET` đọc từ `.env` (không in ra màn hình).
 
+> Dùng **Git Bash** trên Windows: đặt `export MSYS_NO_PATHCONV=1` trước khi chạy. Nếu không, Git Bash tự đổi
+> `"/hoi …"` thành `"C:/Program Files/Git/hoi …"` và tin nhắn sẽ bị bỏ qua (`no_trigger`). PowerShell không bị.
+
 ```powershell
 $py = ".\.venv\Scripts\python.exe"
 # Một câu hỏi
@@ -134,6 +156,53 @@ curl.exe -X POST http://127.0.0.1:8000/admin/classes/AUTO-N8N-01/toggle `
 
 `POST /webhooks/zalo` trả `501` — xem [app/channels/zalo.py](app/channels/zalo.py) về điều kiện tích hợp Zalo OA/GMF.
 
+## Giảng viên: ticket & FAQ
+
+Trang **http://127.0.0.1:8000/admin/ui** → nhập `ADMIN_API_KEY` (lưu trong sessionStorage của tab, không nằm
+trong mã trang) → lọc ticket theo lớp/trạng thái → chọn ticket → nhập câu trả lời → tick "Gửi câu trả lời vào
+nhóm" → **Lưu** → **Duyệt vào FAQ của lớp** (có thể viết lại câu hỏi cho tổng quát). FAQ được index ngay, chỉ
+cho lớp của ticket; câu hỏi tương tự lần sau bot trả lời với nguồn `FAQ đã duyệt (FAQ giảng viên #N)`.
+
+| Method | Path | Ghi chú |
+|---|---|---|
+| GET | `/admin/classes` | lớp + trạng thái bot (không trả liên hệ giảng viên) |
+| GET | `/admin/handoffs?class_id=&status=&limit=` | mới nhất trước |
+| GET | `/admin/handoffs/{id}` | |
+| PATCH | `/admin/handoffs/{id}` | `{status?, assignee?, instructor_answer?, post_to_group?}`; câu trả lời được che secret; có câu trả lời mà không nêu status → `answered` |
+| POST | `/admin/handoffs/{id}/promote` | `{question?, answer?, approved_by?}`; `409` nếu chưa có câu trả lời hoặc đã duyệt |
+| GET | `/admin/handoffs/export.csv?class_id=&status=` | UTF-8 BOM (mở thẳng bằng Excel/Google Sheets), chặn công thức `= + - @` |
+
+Ticket tạo từ `/api/ask` không có nhóm chat nên không gửi vào nhóm được (`409`).
+
+## Demo 2 nhóm chat (quay video)
+
+Chỉ bật khi `APP_ENV=dev`. Mở **http://127.0.0.1:8000/demo** → nhập `ADMIN_API_KEY` → mỗi khung là một nhóm
+trong `classes.yaml`; bấm câu hỏi mẫu hoặc tự gõ (`Enter` để gửi). Server tự ký HMAC rồi gọi đúng
+`/webhooks/mock` (trình duyệt không thấy `WEBHOOK_SECRET`); dưới mỗi tin hiện kết quả webhook (`queued`,
+`ignored (no_trigger)`, `duplicate`, `rate_limited`). Câu trả lời đọc lại từ outbox mỗi 1,5 giây, kể cả tin
+giảng viên gửi từ trang admin. Cần worker đang chạy.
+
+Kịch bản gợi ý: hỏi cùng "Bài tập nộp khi nào?" ở 2 nhóm → hỏi câu ngoài giáo trình → sang `/admin/ui` trả lời +
+gửi nhóm + duyệt FAQ → hỏi lại câu đó ở nhóm cũ (trả lời từ FAQ) và ở nhóm kia (vẫn chuyển giảng viên).
+
+## Thống kê & chi phí
+
+Trên `/admin/ui` (mục "Thống kê & chi phí ước tính") hoặc gọi API:
+
+```powershell
+curl.exe -H "X-Admin-Key: <ADMIN_API_KEY>" "http://127.0.0.1:8000/admin/stats?class_id=GS-KPI-01&from=2026-11-01&to=2026-11-30"
+curl.exe -H "X-Admin-Key: <ADMIN_API_KEY>" "http://127.0.0.1:8000/admin/security-events?type=prompt_injection&limit=50"
+```
+
+- `total` / `by_class` / `by_day` (ngày theo giờ Việt Nam): số câu hỏi bot xử lý, `answered`, `partial`, `handoff`,
+  `refused`, `error`, `ignored`, `duplicate`, `rate_limited`, `tickets_by_reason`, latency TB/p95 (từ lúc nhận
+  webhook đến lúc gửi trả lời), token vào/ra/embedding, `cost_usd`.
+- `ingest`: token embedding khi index tài liệu (mọi version) và khi duyệt FAQ.
+- **Chi phí = token thực tế × đơn giá trong [config/pricing.yaml](config/pricing.yaml)**, tính lúc xem, nên điền giá
+  sau vẫn ra chi phí của lịch sử. Repo chỉ có placeholder `null` → `cost_usd: null` và
+  `pricing.models_missing_price` liệt kê model chưa có giá. Điền đơn giá (USD / 1 triệu token) từ trang giá chính
+  thức, đặt `checked_at`, rồi `docker compose up -d --force-recreate api worker`.
+
 ## Chạy test
 
 Test chạy offline (provider `fake`), dùng DB riêng `gos_test`, được tạo lại mỗi lần chạy (không đụng DB chính).
@@ -149,16 +218,18 @@ docker compose up -d postgres redis
 ## Cấu trúc
 
 ```
-app/core/      config (env), logging JSON, security helpers, classes registry, redis
-app/db/        models SQLAlchemy, session, seed classes.yaml
-app/api/       routers: /health, /webhooks/{mock,zalo}, /admin/classes/{id}/toggle, /admin/documents
+app/core/      config (env), logging JSON, security helpers, classes registry, redis, pricing (pricing.yaml)
+app/db/        models SQLAlchemy, session, seed classes.yaml, stats (tổng hợp cho /admin/stats)
+app/api/       routers: /health, /webhooks/{mock,zalo}, /api/ask, /admin/{classes,documents,handoffs,stats,security-events}, /admin/ui, /demo
 app/channels/  ChannelAdapter, MockWebhookAdapter (HMAC + outbox), ZaloGMFAdapter (stub), ingress (dedupe → lọc → rate limit → enqueue)
-app/agent/     messages.py (mọi câu chữ gửi học viên)
-app/ingestion/ parsers (DOCX/PDF/XLSX), chunker, luật flag injection, indexer (phân lớp, versioning)
-app/providers/ embedding: openai, gemini, fake
+app/agent/     pipeline (điều phối), guard, policy, prompts, verify, sources, conversation, handoff, messages
+app/ingestion/ parsers (DOCX/PDF/XLSX), chunker, luật flag injection, indexer (phân lớp, versioning), faq (duyệt ticket → FAQ)
+app/templates/ Jinja2: base, admin, demo (CSP nonce, dữ liệu chèn bằng textContent)
+app/providers/ embedding + LLM: openai, gemini, fake; retry (timeout + backoff)
+app/retrieval/  hybrid_search (vector + full-text IDF, RRF) — bắt buộc class_id
 app/workers/   arq worker: process_message, send_notice
 scripts/       send_mock_event, ingest_samples, preview_chunks, derive_samples
-alembic/       migration 0001 (extension vector + toàn bộ bảng), 0002 (documents: origin_scope, storage_path)
+alembic/       migration 0001 (extension vector + toàn bộ bảng), 0002 (documents: origin_scope, storage_path), 0003 (model embedding + token FAQ)
 config/        classes.yaml (lớp ↔ nhóm chat ↔ tiền tố mã mục), pricing.yaml (đơn giá token — tự điền)
 data/samples/  học liệu mẫu theo lớp (KHÔNG sửa); _meta/ = tài liệu hướng dẫn + tin nhắn mô phỏng (không ingest)
 data/derived/  bản PDF/XLSX chuyển từ samples (không đổi nội dung, không ingest mặc định)

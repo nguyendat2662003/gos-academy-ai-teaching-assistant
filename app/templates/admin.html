@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block title %}Quản trị – Trợ giảng AI{% endblock %}
+{% block head %}
+<style nonce="{{ nonce }}">
+  .grid { display:grid; grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr); gap:16px; align-items:start; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .field { margin-bottom:10px; } .field label { display:block; font-weight:600; margin-bottom:4px; }
+  .field.row label { display:inline; font-weight:normal; }
+  .q { max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .scroll { overflow-x:auto; } td.num { text-align:right; white-space:nowrap; }
+</style>
+{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Lớp & trạng thái bot</h2>
+  <div id="classes" class="row muted">Nhập admin key để tải.</div>
+  <div id="classes-msg" class="msg"></div>
+</section>
+
+<section class="card">
+  <h2>Thống kê & chi phí ước tính</h2>
+  <div class="row">
+    <select id="s-class" aria-label="Lớp">
+      <option value="">Tất cả lớp</option>
+      {% for c in classes %}<option value="{{ c.id }}">{{ c.id }}</option>{% endfor %}
+    </select>
+    <label class="muted">Từ <input type="date" id="s-from"></label>
+    <label class="muted">Đến <input type="date" id="s-to"></label>
+    <button id="s-load" type="button">Xem</button>
+  </div>
+  <div class="msg" id="s-msg"></div>
+  <p class="muted" id="s-pricing"></p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Phạm vi</th><th>Câu hỏi</th><th>Trả lời</th><th>Một phần</th><th>Chuyển GV</th><th>Từ chối</th>
+        <th>Lỗi</th><th>Bỏ qua / trùng / giới hạn</th><th>Ticket theo lý do</th><th>Latency TB / p95 (ms)</th>
+        <th>Token vào / ra / embedding</th><th>Chi phí (USD)</th></tr></thead>
+      <tbody id="s-rows"></tbody>
+    </table>
+  </div>
+  <p class="muted" id="s-extra"></p>
+  <h2>Sự kiện bảo mật gần đây</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Thời gian</th><th>Lớp</th><th>Loại</th><th>Chi tiết (đã che)</th><th>User</th></tr></thead>
+      <tbody id="sec-rows"></tbody>
+    </table>
+  </div>
+</section>
+
+<div class="grid">
+  <section class="card">
+    <h2>Yêu cầu chuyển giảng viên</h2>
+    <div class="row">
+      <select id="f-class" aria-label="Lớp">
+        <option value="">Tất cả lớp</option>
+        {% for c in classes %}<option value="{{ c.id }}">{{ c.id }} – {{ c.name }}</option>{% endfor %}
+      </select>
+      <select id="f-status" aria-label="Trạng thái">
+        <option value="">Mọi trạng thái</option>
+        <option value="open" selected>open</option><option value="in_progress">in_progress</option>
+        <option value="answered">answered</option><option value="closed">closed</option>
+      </select>
+      <button id="reload" type="button">Tải lại</button>
+      <button id="export" class="secondary" type="button">Xuất CSV</button>
+    </div>
+    <div class="msg" id="list-msg"></div>
+    <table>
+      <thead><tr><th>Mã</th><th>Lớp</th><th>Thời gian</th><th>Lý do</th><th>Top score</th><th>Trạng thái</th><th>Câu hỏi</th></tr></thead>
+      <tbody id="tickets"></tbody>
+    </table>
+  </section>
+
+  <section class="card" id="detail">
+    <h2>Chi tiết</h2>
+    <p class="muted" id="detail-empty">Chọn một yêu cầu ở bảng bên trái.</p>
+    <div id="detail-body" hidden>
+      <div class="field"><label>Mã · lớp · lý do</label><div id="d-head"></div></div>
+      <div class="field"><label>Câu hỏi (đã che thông tin bí mật)</label><div id="d-question" class="pre"></div></div>
+      <div class="field"><label>Kết quả kiểm tra của bot</label><pre id="d-check"></pre></div>
+      <div class="field"><label for="d-assignee">Người xử lý</label><input id="d-assignee" maxlength="255"></div>
+      <div class="field"><label for="d-answer">Câu trả lời của giảng viên</label><textarea id="d-answer" maxlength="4000"></textarea></div>
+      <div class="field row">
+        <label for="d-status">Trạng thái</label>
+        <select id="d-status"><option>open</option><option>in_progress</option><option>answered</option><option>closed</option></select>
+        <label><input type="checkbox" id="d-post"> Gửi câu trả lời vào nhóm</label>
+      </div>
+      <div class="row"><button id="save" type="button">Lưu</button></div>
+      <div class="msg" id="save-msg"></div>
+      <hr>
+      <div class="field"><label for="d-faq-q">Câu hỏi khi đưa vào FAQ (có thể viết lại cho tổng quát)</label><textarea id="d-faq-q" maxlength="2000"></textarea></div>
+      <div class="row"><button id="promote" class="secondary" type="button">Duyệt vào FAQ của lớp</button></div>
+      <div class="msg" id="promote-msg"></div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ nonce }}">
+  let tickets = [], current = null;
+  const $ = (id) => document.getElementById(id);
+
+  async function loadClasses() {
+    const box = $("classes");
+    try {
+      const classes = await (await api("/admin/classes")).json();
+      box.replaceChildren(...classes.map((c) => h("span", { class: "row" },
+        h("strong", {}, c.id), h("span", { class: "muted" }, c.name),
+        h("span", { class: "badge " + (c.enabled ? "b-answer" : "b-refusal") }, c.enabled ? "bot đang bật" : "bot đang tắt"),
+        h("button", { class: "secondary", type: "button", onclick: () => toggle(c) }, c.enabled ? "Tắt" : "Bật"))));
+      say($("classes-msg"), "");
+    } catch (e) { say($("classes-msg"), e.message, "err"); }
+  }
+  async function toggle(c) {
+    try {
+      await api("/admin/classes/" + encodeURIComponent(c.id) + "/toggle", { method: "POST", json: { enabled: !c.enabled } });
+      loadClasses();
+    } catch (e) { say($("classes-msg"), e.message, "err"); }
+  }
+
+  function query() {
+    const p = new URLSearchParams();
+    if ($("f-class").value) p.set("class_id", $("f-class").value);
+    if ($("f-status").value) p.set("status", $("f-status").value);
+    return p.toString();
+  }
+  async function loadTickets() {
+    try {
+      tickets = await (await api("/admin/handoffs?" + query())).json();
+      $("tickets").replaceChildren(...tickets.map((t) => h("tr",
+        { class: "clickable" + (current && current.id === t.id ? " selected" : ""), onclick: () => select(t.id) },
+        h("td", {}, t.code), h("td", {}, t.class_id), h("td", {}, new Date(t.created_at).toLocaleString("vi-VN")),
+        h("td", {}, h("span", { class: "badge" }, t.reason)),
+        h("td", {}, t.confidence == null ? "–" : t.confidence.toFixed(3)),
+        h("td", {}, t.status + (t.promoted_to_faq ? " · FAQ" : "")),
+        h("td", { class: "q", title: t.question }, t.question))));
+      say($("list-msg"), tickets.length ? "" : "Không có yêu cầu nào.", "");
+    } catch (e) { say($("list-msg"), e.message, "err"); }
+  }
+  function show(t) {
+    current = t;
+    $("detail-empty").hidden = true; $("detail-body").hidden = false;
+    $("d-head").replaceChildren(h("strong", {}, t.code), " · ", t.class_id, " · ", h("span", { class: "badge" }, t.reason),
+      " · ", t.status);
+    $("d-question").textContent = t.question;
+    $("d-check").textContent = JSON.stringify(t.check_detail, null, 2);
+    $("d-assignee").value = t.assignee || "";
+    $("d-answer").value = t.instructor_answer || "";
+    $("d-status").value = t.status;
+    $("d-post").checked = false; $("d-post").disabled = !t.can_post_to_group;
+    $("d-faq-q").value = t.question;
+    $("promote").disabled = t.promoted_to_faq;
+  }
+  function select(id) {
+    const t = tickets.find((x) => x.id === id);
+    if (!t) return;
+    show(t);
+    say($("save-msg"), ""); say($("promote-msg"), t.promoted_to_faq ? "Đã duyệt vào FAQ." : "", "ok");
+    loadTickets();
+  }
+  $("save").addEventListener("click", async () => {
+    try {
+      const body = { assignee: $("d-assignee").value, instructor_answer: $("d-answer").value,
+                     status: $("d-status").value, post_to_group: $("d-post").checked };
+      const data = await (await api("/admin/handoffs/" + current.id, { method: "PATCH", json: body })).json();
+      show(data.ticket);
+      say($("save-msg"), "Đã lưu" + (data.posted_to_group ? " và gửi vào nhóm." : "."), "ok");
+      loadTickets();
+    } catch (e) { say($("save-msg"), e.message, "err"); }
+  });
+  $("promote").addEventListener("click", async () => {
+    try {
+      const resp = await api("/admin/handoffs/" + current.id + "/promote", { method: "POST", json: { question: $("d-faq-q").value } });
+      const data = await resp.json();
+      say($("promote-msg"), "Đã tạo FAQ #" + data.faq_entry_id + " cho lớp " + data.class_id + " và index ngay.", "ok");
+      $("promote").disabled = true; loadTickets();
+    } catch (e) {
+      say($("promote-msg"), e.message.includes("missing_answer") ? "Cần lưu câu trả lời trước khi duyệt." : e.message, "err");
+    }
+  });
+  $("export").addEventListener("click", async () => {
+    try {
+      const blob = await (await api("/admin/handoffs/export.csv?" + query())).blob();
+      const a = h("a", { href: URL.createObjectURL(blob), download: "handoffs.csv" });
+      a.click(); URL.revokeObjectURL(a.href);
+    } catch (e) { say($("list-msg"), e.message, "err"); }
+  });
+  function money(v) { return v === null || v === undefined ? "chưa đủ đơn giá" : "$" + Number(v).toFixed(6); }
+  function statsRow(label, m) {
+    const reasons = Object.entries(m.tickets_by_reason || {}).map(([k, n]) => k + ": " + n).join(", ") || "–";
+    const num = (v) => h("td", { class: "num" }, String(v ?? "–"));
+    return h("tr", {}, h("td", {}, label), num(m.questions), num(m.answered), num(m.partial), num(m.handoff),
+      num(m.refused), num(m.error), num(m.ignored + " / " + m.duplicate + " / " + m.rate_limited), h("td", {}, reasons),
+      num((m.latency_ms_avg ?? "–") + " / " + (m.latency_ms_p95 ?? "–")),
+      num(m.input_tokens + " / " + m.output_tokens + " / " + m.embedding_tokens), num(money(m.cost_usd)));
+  }
+  async function loadStats() {
+    const p = new URLSearchParams();
+    if ($("s-class").value) p.set("class_id", $("s-class").value);
+    if ($("s-from").value) p.set("from", $("s-from").value);
+    if ($("s-to").value) p.set("to", $("s-to").value);
+    try {
+      const s = await (await api("/admin/stats?" + p)).json();
+      $("s-rows").replaceChildren(statsRow("Tổng", s.total),
+        ...s.by_class.map((r) => statsRow("Lớp " + r.class_id, r)), ...s.by_day.map((r) => statsRow("Ngày " + r.day, r)));
+      const pr = s.pricing;
+      $("s-pricing").textContent = "Chi phí = token thực tế × đơn giá trong config/pricing.yaml (kiểm tra: " +
+        (pr.checked_at || "chưa điền") + ")" + (pr.cost_complete ? "." : ". Chưa có đơn giá cho: " + pr.models_missing_price.join(", "));
+      $("s-extra").textContent = "Ingest (embedding tài liệu + FAQ): " + s.ingest.embedding_tokens + " token, " +
+        money(s.ingest.cost_usd) + ". Sự kiện bảo mật: " + s.security_events.total + " (" +
+        (Object.entries(s.security_events.by_type).map(([k, n]) => k + ": " + n).join(", ") || "không có") + ").";
+      say($("s-msg"), "");
+      const ev = await (await api("/admin/security-events?limit=20&" + p)).json();
+      $("sec-rows").replaceChildren(...ev.map((e) => h("tr", {}, h("td", {}, new Date(e.created_at).toLocaleString("vi-VN")),
+        h("td", {}, e.class_id || "–"), h("td", {}, h("span", { class: "badge b-refusal" }, e.type)),
+        h("td", { class: "q", title: e.detail || "" }, e.detail || ""), h("td", {}, e.user_ref || "–"))));
+    } catch (e) { say($("s-msg"), e.message, "err"); }
+  }
+  $("s-load").addEventListener("click", loadStats);
+  $("reload").addEventListener("click", loadTickets);
+  $("f-class").addEventListener("change", loadTickets);
+  $("f-status").addEventListener("change", loadTickets);
+  document.addEventListener("keychange", () => { loadClasses(); loadTickets(); loadStats(); });
+  if (store.get()) { loadClasses(); loadTickets(); loadStats(); }
+</script>
+{% endblock %}

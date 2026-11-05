@@ -6,7 +6,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ChannelGroup, ClassRoom, ProcessedEvent, RequestLog, SecurityEvent
+from app.db.models import ChannelGroup, ClassRoom, Outbox, ProcessedEvent, RequestLog, SecurityEvent
 
 
 @dataclass(frozen=True)
@@ -87,3 +87,10 @@ async def set_class_enabled(session: AsyncSession, class_id: str, enabled: bool)
     )
     await session.commit()
     return result.rowcount > 0
+
+
+async def outbox_has_event(session: AsyncSession, channel: str, event_id: str) -> bool:
+    found = await session.scalar(
+        select(Outbox.id).where(Outbox.channel == channel, Outbox.event_id == event_id).limit(1)
+    )
+    return found is not None

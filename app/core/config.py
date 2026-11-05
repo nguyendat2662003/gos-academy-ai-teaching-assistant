@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     llm_model: str = "fake-llm"
     llm_timeout_seconds: float = 30.0
     llm_max_retries: int = Field(default=3, ge=0, le=10)
+    llm_retry_base_delay: float = Field(default=1.0, ge=0)  # seconds; doubles on each retry
+    llm_max_output_tokens: int = Field(default=1200, gt=0)
     gemini_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
 
@@ -41,7 +43,7 @@ class Settings(BaseSettings):
     rate_limit_user_per_min: int = Field(default=5, gt=0)
     rate_limit_class_per_min: int = Field(default=30, gt=0)
     retrieval_top_k: int = Field(default=5, gt=0, le=50)
-    retrieval_min_score: float = Field(default=0.5, ge=-1.0, le=1.0)
+    retrieval_min_score: float = Field(default=0.3, ge=-1.0, le=1.0)
     context_max_turns: int = Field(default=6, ge=0)
     context_ttl_minutes: int = Field(default=30, gt=0)
 

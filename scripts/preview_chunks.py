@@ -21,7 +21,9 @@ def default_files() -> list[Path]:
         p
         for root in DEFAULT_ROOTS
         for p in root.glob("*/*")
-        if p.suffix.lower() in SUPPORTED_SUFFIXES and not p.parent.name.startswith("_")
+        if p.suffix.lower() in SUPPORTED_SUFFIXES
+        and not p.parent.name.startswith("_")
+        and not p.name.startswith(("~$", "."))  # Office lock files of open documents, hidden files
     )
 
 

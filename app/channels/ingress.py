@@ -14,6 +14,7 @@ from app.agent import messages
 from app.channels.base import IncomingMessage
 from app.core.config import Settings
 from app.core.ratelimit import check_rate
+from app.core.redact import redact
 from app.core.security import hash_user_id
 from app.db import repositories as repo
 from app.db.models import Outcome, SecurityEventType
@@ -73,6 +74,7 @@ async def handle_incoming(
             channel=msg.channel,
             event_id=msg.event_id,
             outcome=result.status,
+            cost_usd=0,  # no provider call before the queue
             latency_ms=round((time.perf_counter() - started) * 1000),
         )
     await session.commit()
@@ -114,6 +116,19 @@ async def _decide(
 
     user_hash = hash_user_id(msg.user_id, settings.user_hash_salt.get_secret_value())
 
+    # Secrets never leave this function unmasked: not into Redis, the DB, logs or the LLM (D-27b).
+    redaction = redact(question)
+    question = redaction.text
+    if redaction.found:
+        repo.add_security_event(
+            session,
+            SecurityEventType.SECRET_IN_MESSAGE,
+            request_id=request_id,
+            class_id=klass.id,
+            user_hash=user_hash,
+            detail="kinds=" + ",".join(sorted(set(redaction.kinds))),
+        )
+
     # 5. Rate limit; at most one notice per scope per window.
     decision = await check_rate(
         redis, klass.id, user_hash, settings.rate_limit_user_per_min, settings.rate_limit_class_per_min
@@ -152,6 +167,7 @@ async def _decide(
         class_id=klass.id,
         user_hash=user_hash,
         question=question,
+        secret_detected=redaction.found,
         msg_id=msg.msg_id,
         received_at_ms=int(time.time() * 1000),
     )

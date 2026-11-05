@@ -21,6 +21,7 @@ class ClassConfig(BaseModel):
     instructor_name: str
     instructor_contact: str
     section_prefixes: list[str] = []
+    aliases: list[str] = []
     groups: list[GroupConfig] = []
 
 

@@ -13,7 +13,8 @@ SEND_NOTICE = "send_notice"
 
 
 class MessageJob(BaseModel):
-    """Everything the worker needs. Contains the user HASH, never the raw platform user id."""
+    """Everything the worker needs. Contains the user HASH, never the raw platform user id, and the
+    question already redacted."""
 
     request_id: str
     channel: str
@@ -24,6 +25,7 @@ class MessageJob(BaseModel):
     question: str
     msg_id: str | None = None
     received_at_ms: int
+    secret_detected: bool = False  # the original text contained a secret (already masked)
 
 
 class NoticeJob(BaseModel):

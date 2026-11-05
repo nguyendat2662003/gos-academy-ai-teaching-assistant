@@ -322,6 +322,7 @@ async def _index_scope(
         await _retire(session, previous, DocumentStatus.SUPERSEDED)
     new.status = DocumentStatus.ACTIVE
     new.embedding_tokens = tokens
+    new.embedding_model = embedder.model
     await session.commit()
 
     flagged = sum(d.flagged_injection for d in drafts)

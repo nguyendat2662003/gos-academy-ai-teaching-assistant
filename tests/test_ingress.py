@@ -137,3 +137,17 @@ async def test_enqueue_failure_releases_event_so_retry_works(client, fake_queue,
     retry = await send(client, body)
     assert retry.json()["status"] == "queued"
     assert len(fake_queue.messages) == 1
+
+
+@pytest.mark.db
+async def test_secret_is_masked_before_enqueue(client, fake_queue, db_session) -> None:
+    fake_key = "sk-" + "proj-" + "Zz9" * 8  # built at runtime: no key-like literal in the repo
+    resp = await send(client, payload(text=f"/hoi Em dùng key {fake_key} gọi API trong n8n bị lỗi 401"))
+    assert resp.json()["status"] == "queued"
+    [job] = fake_queue.messages
+    assert fake_key not in job.model_dump_json()
+    assert "[ĐÃ_ẨN]" in job.question and job.secret_detected
+    events = (await db_session.execute(select(SecurityEvent))).scalars().all()
+    assert [(e.type, e.class_id, e.detail_redacted) for e in events] == [
+        ("secret_in_message", "AUTO-N8N-01", "kinds=openai_key")
+    ]

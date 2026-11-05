@@ -194,3 +194,169 @@ Mỗi thư viện là phụ thuộc trực tiếp của một thành phần đã
 
 ### D-43. Chunk bị flag injection: vẫn index + `security_events` (`prompt_injection`, source=document) + log cảnh báo
 - Admin xem được tài liệu nào chứa câu mệnh lệnh để xử lý. Khi đưa vào prompt (Phase 4), các chunk này luôn được đóng gói là dữ liệu.
+
+---
+
+## Phase 4 — Truy xuất & agent (phần A: retrieval, redact, guard, policy, prompt)
+
+### D-44. Che secret bằng regex theo thứ tự cụ thể → chung, chạy ngay tại webhook (D-27b)
+- Thứ tự áp dụng: private key, `sk-…`, `AIza…`, `gh*_…`, JWT, `Bearer …`, cặp `password=` / `mật khẩu:` / `token là` (chỉ che phần giá trị nên câu vẫn đọc được), chuỗi hex ≥ 32 ký tự, chuỗi base64 ≥ 32 ký tự có cả chữ và số.
+- Hàm che có tính idempotent, nên worker chạy lại lần nữa cũng không làm hỏng dữ liệu. Phát hiện secret thì ghi `security_events` loại `secret_in_message` (chỉ lưu tên loại, không lưu giá trị), và job mang cờ `secret_detected` để câu trả lời nhắc học viên thu hồi key.
+- Test dùng key giả được ghép lúc chạy, nên trong repo không có chuỗi nào giống key thật.
+
+### D-45. Guard chỉ là lớp phòng thủ đầu tiên
+- Ba nhóm luật regex chạy trên câu đã bỏ dấu: injection (dùng lại luật tài liệu ở D-10, cộng các mẫu riêng cho câu hỏi như "system prompt", "your instructions"), đòi bí mật, đòi dữ liệu lớp khác.
+- Kể cả khi guard bỏ sót, SQL vẫn chỉ trả chunk của lớp đó và prompt vẫn coi mọi đầu vào là dữ liệu. Guard chỉ giúp từ chối sớm và ghi được sự kiện bảo mật.
+- `GUARD_LLM_ENABLED` (phân loại thêm bằng LLM) chưa bật trong MVP.
+
+### D-46. "Đòi bí mật" = động từ yêu cầu + danh từ bí mật + **chủ sở hữu** (nội bộ / của GOSTECH / của hệ thống / của bạn)
+- Nếu chặn mọi câu có chữ "API key" thì câu hỏi hợp lệ "Em có cần kiểm tra lại API key không?" cũng bị chặn. Có test cho cả hai chiều. Trong 8 tin mẫu của HR, guard chỉ chặn đúng E008.
+- "Lớp khác": các cụm `lớp khác / class khác`, mã lớp khác, hoặc `lớp|class|nhóm + <alias của lớp khác>` (alias khai trong `classes.yaml`). Tên công cụ đứng một mình không bị chặn, vì lớp n8n có thể hỏi hợp lệ về việc ghi dữ liệu vào Google Sheets.
+
+### D-47. Chủ đề nhạy cảm nhận diện bằng từ khóa; "căn cứ chính sách" phải có số liệu cụ thể
+- Các nhóm: học phí, ưu đãi, hoàn tiền, chứng chỉ, điểm số (không dùng chữ "điểm" đứng một mình, vì câu "RAG khác Fine-tuning ở **điểm** nào?" sẽ bị nhận nhầm), khiếu nại, thông tin cá nhân.
+- Một chunk chỉ được coi là căn cứ chính sách khi vừa nói đúng chủ đề, vừa có con số (tiền, %, hạn "trước N…"), và không phải câu khẳng định "không có thông tin". Vì vậy COMMON-03 không được coi là căn cứ, và câu hỏi học phí sẽ handoff `policy`.
+
+### D-48. Truy xuất: một hàm duy nhất `hybrid_search(session, *, class_id, …)`
+- `class_id` là tham số keyword bắt buộc, không có giá trị mặc định. Truyền `COMMON` hoặc mã lớp lạ sẽ bị `ValueError`.
+- Bộ lọc `class_id IN (lớp, COMMON)` và điều kiện "tài liệu `active` hoặc FAQ `active`" nằm trong cùng một `_base_query`, dùng chung cho nhánh vector, nhánh full-text và bước đếm IDF.
+- Có test cấu trúc: mọi coroutine public trong `app.retrieval.search` đều phải có `class_id` dạng keyword bắt buộc; chỉ 3 module được phép tham chiếu `Chunk` (search, indexer, admin_documents).
+- pgvector 0.8: dùng `SET LOCAL hnsw.iterative_scan = relaxed_order` để HNSW quét tiếp khi bộ lọc `WHERE` loại bớt hàng, nhờ đó vẫn trả đủ k kết quả.
+- Điểm dùng cho ngưỡng = cosine của kết quả vector tốt nhất (CLAUDE.md §7). RRF với k = 60.
+
+### D-49. Full-text: OR các từ trong câu hỏi, chấm điểm bằng tổng IDF của các từ khớp
+- Postgres tách tiếng Việt theo âm tiết, nên các âm tiết phổ biến ("xử", "lý", "lỗi") lấn át từ hiếm mang tính quyết định ("401", "unauthorized"). Đã thử dùng `ts_rank_cd` rồi lọc theo tỷ lệ 30% số chunk, nhưng vẫn xếp AUTO-07 lên đầu.
+- Cách chốt: `idf(t) = ln(1 + N/df(t))` tính trên các chunk thuộc phạm vi của lớp (một câu SQL đếm), điểm của chunk = Σ idf của các từ nó chứa. Với câu hỏi 401, AUTO-03 lên đầu nhánh full-text.
+- Từ chỉ gồm ký tự `\w` nên không thể chèn cú pháp `to_tsquery`. Có thêm một danh sách stopword nhỏ.
+- **Hạn chế:** câu hỏi gõ không dấu sẽ không khớp full-text (cột `tsv` giữ dấu). Nhánh vector bù được phần này. Hướng cải thiện: dùng extension `unaccent`.
+
+### D-50. Prompt: mọi dữ liệu không tin cậy đều được bọc thẻ và escape HTML
+- Tài liệu nằm trong `<tai_lieu id nguon muc [canh_bao]>`, lịch sử trong `<lich_su>`, câu hỏi trong `<cau_hoi>`. Ký tự `<`, `>`, `&` trong nội dung được escape, nên không thể tự đóng thẻ để giả làm chỉ dẫn (có test).
+- Chunk bị flag mang thuộc tính `canh_bao="chua_cau_lenh"`. LLM chỉ trả id chunk (`c_N`); tên nguồn do code ghép từ metadata.
+- Đầu ra được validate bằng Pydantic (`LLMAnswer`); có thêm trường `unanswered_parts` cho outcome `partial` (D-04).
+
+---
+
+## Phase 4 — Truy xuất & agent (phần B: sinh câu trả lời, kiểm tra, ngữ cảnh, retry)
+
+### D-51. LLM gọi ở chế độ JSON; retry tự viết, tắt retry của SDK
+- OpenAI: Chat Completions với `response_format={"type": "json_object"}` và `max_completion_tokens`. Gemini: `response_mime_type="application/json"` (chưa được test vì không có key).
+- `providers/retry.py`: `asyncio.wait_for` (timeout) + retry chỉ cho `TransientLLMError` (429 / 5xx / timeout / lỗi kết nối), độ trễ `base·2^n` cộng jitter, tối đa `LLM_MAX_RETRIES`. Lỗi `PermanentLLMError` (400, 401, model sai...) không retry.
+- **Phương án loại:** dùng retry có sẵn của SDK OpenAI (tiện, nhưng mỗi provider một kiểu, khó test và khó giải thích). Có test: 2 lần lỗi tạm thời rồi thành công → 3 lần gọi; lỗi vĩnh viễn → 1 lần gọi; timeout → `1 + LLM_MAX_RETRIES` lần gọi rồi tạo ticket `error`.
+
+### D-52. LLM giả (`fake`) là bản giả tất định có luật rõ ràng, không phải mô hình ngôn ngữ
+- Nó đọc đúng prompt mà code dựng ra. Câu dạng "A khác B" được tách thành 2 ý. Một ý được coi là có căn cứ khi thân chunk chứa đủ từ khóa (với câu hỏi nguyên khối: ≥ 50% số từ và tối thiểu 2 từ). Ý thiếu căn cứ được ghi vào `unanswered_parts`.
+- Có thể gắn `script` để giả lập LLM trả lời sai hoặc có ý xấu (JSON hỏng, trích dẫn bịa, câu trả lời chứa key). Nhờ đó test được bước kiểm tra đầu ra.
+- Chất lượng trả lời thật được đo bằng LLM thật (`run_scenarios.py`, `eval_rag.py`, Phase 7). Test offline chỉ chứng minh **logic điều phối** đúng.
+
+### D-53. Thứ tự trong worker: che secret → guard → lịch sử → viết lại câu hỏi → truy xuất → chính sách → ngưỡng → LLM → kiểm tra → ghép câu trả lời
+- Guard chạy trước mọi lệnh gọi tốn tiền (embedding, LLM). Câu hỏi chính sách không có căn cứ và câu hỏi dưới ngưỡng đều **không gọi LLM** (có test `llm.calls == []`).
+- Chỉ viết lại câu hỏi khi có lịch sử. Nếu bước viết lại lỗi thì dùng câu gốc, không làm hỏng cả yêu cầu.
+- Kiểm tra chính sách cần kết quả truy xuất, nên chạy sau bước truy xuất (CLAUDE.md đặt bước 9 trước bước 11, nhưng kết quả cuối cùng như nhau).
+
+### D-54. Worker idempotent ở 3 điểm
+1. Đầu job: nếu `outbox` đã có event thì dừng (retry sau khi đã gửi sẽ không gọi lại LLM, tránh tốn tiền).
+2. Ticket: tìm theo `request_id` trước khi tạo, nên retry không tạo ticket thứ hai.
+3. Log và lịch sử chỉ ghi **sau khi** gửi thành công. Unique index trên outbox (D-17) là chốt chặn cuối cùng.
+
+### D-55. Outcome `partial` = câu trả lời phần có căn cứ + câu "Phần “X” chưa có trong tài liệu…" + ticket `partial_coverage` (lưu `unanswered_parts` trong `check_detail`)
+
+### D-56. Căn cứ chính sách phải nằm trong **cùng một câu** (sửa lỗi do test bắt được)
+- Phiên bản đầu xét cả chunk, nên COMMON-01 ("…kết luận chính thức về **học phí**…" và "…trong vòng **01** ngày…") bị coi là căn cứ, và bot sẽ trả lời câu hỏi giảm học phí. Test tình huống 3 đã bắt được lỗi này.
+- Nay căn cứ chỉ tính số tiền hoặc phần trăm (không tính mốc thời gian), và phải cùng câu với từ khóa chủ đề.
+
+### D-57. `POST /api/ask` dùng chung pipeline, chạy đồng bộ, tin `class_id` do bên gọi (server-to-server, `X-API-Key`)
+- Vẫn che secret, chạy guard, kiểm tra lớp tồn tại và đang bật (`404` / `409`). Không áp rate limit vì bên gọi là backend tin cậy. Kênh ghi log là `api`.
+
+### D-58. Lịch sử hội thoại lưu câu hỏi đã viết lại (độc lập) + thân câu trả lời (không kèm dòng nguồn); không lưu các lượt bị từ chối
+- Lọc theo `(class_id, user_hash)`, nên cùng một học viên ở lớp khác không có lịch sử (có test). TTL và giới hạn số lượt được áp ngay trong SQL.
+
+### D-59. Test dùng `RETRIEVAL_MIN_SCORE = 0`; ngưỡng có test riêng
+- Cosine của embedding giả không có ý nghĩa tuyệt đối, nên các test tình huống để LLM giả quyết định. Một test riêng đặt ngưỡng 0.99 để khẳng định nhánh `no_context` không gọi LLM. Giá trị thật sẽ hiệu chỉnh bằng `eval_rag.py` với embedding OpenAI (Phase 7).
+
+## Phase 4 — Chạy thật (OpenAI `gpt-6-luna` + `text-embedding-3-small`, dim 768)
+
+### D-60. Ngưỡng `RETRIEVAL_MIN_SCORE = 0.5` quá cao; đề xuất tạm `0.3` (hiệu chỉnh chính thức bằng eval ở Phase 7)
+Cosine top-1 đo được trên 14 câu thật (8 tin mẫu HR + các tình huống ở §13):
+
+| Câu hỏi | top | Kỳ vọng | Với 0.5 | Với 0.3 |
+|---|---|---|---|---|
+| E001–E005, S5 (2 lớp) | 0.611–0.788 | trả lời | đúng | đúng |
+| E006 "Lớp mình học thứ mấy?" (có trong AUTO-CLASS-01) | 0.449 | trả lời | **sai: chuyển `no_context`** | đúng |
+| S1 "RAG khác Fine-tuning…" (AUTO-05) | 0.394 | `partial` | **sai: chuyển `no_context`** | đúng (`partial`, unanswered = Fine-tuning) |
+| S4 Kubernetes / Docker Swarm | 0.343 | chuyển giảng viên | đúng (`no_context`) | đúng (LLM báo `not_answerable` → `low_confidence`) |
+
+- Câu hỏi tiếng Việt ngắn có cosine thấp ngay cả khi tài liệu có đáp án. Khoảng cách giữa "có căn cứ" (0.394) và "không có" (0.343) rất hẹp, nên ngưỡng không thể là lớp chặn chính.
+- Thiết kế: ngưỡng chỉ là bộ lọc rẻ, để tiết kiệm lời gọi LLM cho câu hỏi rõ ràng lạc đề. Lớp chặn chính chống bịa là bước kiểm tra JSON + trích dẫn (bước 14), và S4 cho thấy bước này đã chặn đúng. Đặt ngưỡng thấp an toàn hơn đặt cao: sai do ngưỡng thấp tốn thêm khoảng 1.5k token; sai do ngưỡng cao làm mất câu trả lời đúng.
+- Câu chính sách (S3, E007) và câu bị guard chặn (S7, E008) được quyết định trước bước truy xuất hoặc trước ngưỡng, nên không phụ thuộc giá trị này.
+
+## Phase 5 — Handoff, FAQ, admin, demo
+
+### D-61. FAQ đã duyệt luôn thuộc lớp của ticket, không do bên gọi chọn
+- `POST /admin/handoffs/{id}/promote` không nhận `class_id`. Lớp lấy từ ticket, mà ticket được tạo từ `group_id` phía server. Vì vậy giảng viên không thể vô tình đưa câu trả lời lớp này vào FAQ lớp khác (ràng buộc cứng số 2).
+- Một FAQ = một bản ghi `faq_entries` + một chunk `source_type=faq` (`faq_entry_id`, location `FAQ giảng viên #N`). Truy xuất chỉ lấy chunk của FAQ `active` (đã có từ Phase 4).
+- Thứ tự: embed **trước**, rồi ghi entry + chunk + `promoted_to_faq` trong **một transaction**. Nếu provider lỗi thì không có gì được ghi dở. Câu hỏi và câu trả lời đi qua `redact()`, và chunk vẫn qua luật flag injection như tài liệu.
+- Mỗi ticket chỉ duyệt một lần (`409 already_promoted`), nên không tạo FAQ trùng.
+- Test kiến trúc "chỉ các module được phép đọc/ghi `Chunk`" đã bắt module mới. Tôi đã xem lại rồi mới thêm vào danh sách (chỉ INSERT, lớp lấy từ ticket).
+
+### D-62. Câu trả lời của giảng viên gửi vào nhóm qua chính adapter, `kind=instructor`, `event_id=NULL`
+- Unique của outbox chỉ áp với `event_id` khác null (D-17), nên giảng viên có thể gửi lại có chủ đích, còn bot vẫn không gửi 2 lần cho một event.
+- Ticket đến từ `/api/ask` không có nhóm, nên `post_to_group` → `409`. Kênh không gửi được (Zalo stub) → `501`.
+- Câu trả lời giảng viên cũng được che secret trước khi lưu, vì giảng viên cũng có thể vô tình dán token.
+
+### D-63. Trang admin/demo là "vỏ tĩnh" + JSON API dùng header `X-Admin-Key`; không dùng cookie/session
+- Chỉ có một cơ chế xác thực (header, so sánh hằng thời gian), không cần CSRF token vì không có cookie. Trang HTML không chứa dữ liệu hay secret, nên có thể phục vụ không cần khóa. Khóa người dùng gõ vào được giữ trong `sessionStorage` (mất khi đóng tab).
+- Loại bỏ: HTTP Basic auth (trình duyệt cache thông tin đăng nhập, khó "đăng xuất"); session cookie (phải thêm CSRF và bảng session).
+
+### D-64. Chống XSS: CSP với nonce theo request + chèn dữ liệu bằng `textContent`
+- Câu hỏi học viên và câu trả lời LLM là dữ liệu không tin cậy, hiển thị trên trang của giảng viên. Mọi dữ liệu được chèn bằng text node (helper `h()`), không bao giờ dùng `innerHTML`.
+- `Content-Security-Policy: default-src 'none'; script-src 'nonce-…'; style-src 'nonce-…'; connect-src 'self'; frame-ancestors 'none'`. Kể cả khi có lỗ chèn HTML, script lạ cũng không chạy. Có test kiểm tra header và nonce.
+
+### D-65. CSV export: UTF-8 BOM + vô hiệu hóa công thức
+- BOM để Excel/Google Sheets đọc đúng tiếng Việt.
+- Ô bắt đầu bằng `= + - @` (hoặc tab/CR) được thêm dấu `'` phía trước. Lý do: câu hỏi do học viên gõ, nếu là `=HYPERLINK(...)` hay `=IMPORTXML(...)` sẽ chạy như công thức khi giảng viên mở file (CSV/formula injection). Không xuất `user_hash`.
+
+### D-66. `/demo`: server tự ký HMAC và gọi `/webhooks/mock` của chính nó trong tiến trình (httpx `ASGITransport`)
+- Tin demo đi qua **đúng** đường của sự kiện thật: kiểm tra chữ ký, chống trùng, trigger, rate limit, hàng đợi. Nhờ vậy video chứng minh luồng thật, không phải đường tắt. Trình duyệt không bao giờ thấy `WEBHOOK_SECRET`.
+- Chỉ bật khi `APP_ENV=dev` (khác thì `404` cho cả trang lẫn API) và API yêu cầu `X-Admin-Key`. Nhóm phải thuộc `classes.yaml`.
+- Trang chỉ hiện tin bot đọc từ outbox. Tin học viên chỉ hiện ở trình duyệt đã gửi, vì server không lưu nguyên văn câu hỏi (chỉ lưu bản đã che, trong lịch sử/ticket).
+- Loại bỏ: gọi thẳng `handle_incoming` (bỏ qua bước kiểm tra chữ ký, demo kém thuyết phục); WebSocket/SSE (polling 1,5 giây là đủ cho demo và đơn giản hơn).
+
+### D-67. Embedding token khi duyệt FAQ: hiện chỉ trả trong response + log, chưa cộng vào thống kê
+- Bảng `faq_entries` chưa có cột token. Phase 6 sẽ quyết định ghi vào đâu (cột mới hoặc `request_logs`) khi làm `/admin/stats`. Mỗi FAQ khoảng 100 token, nhỏ hơn nhiều so với một lần ingest.
+
+### D-68. Câu hỏi đếm/liệt kê: cấm khẳng định về "toàn bộ tài liệu"; không chiều theo học viên khi không có căn cứ (lỗi phát hiện khi chạy thật)
+- Lỗi: "có mấy công thức dùng sheet" (lớp GS). Truy xuất top-5 không lấy được GS-03 (EOMONTH, TODAY) vì đoạn đó không chứa chữ "công thức"; thử top-12 cũng không lấy được. LLM chỉ thấy 5 đoạn nhưng trả lời "tài liệu có 3 hàm". Học viên nhắc "còn thiếu EOMONTH", bot xin lỗi rồi chốt "4 hàm", vẫn sai (thực tế có 5 hàm: SUMIFS, COUNTIFS, EOMONTH, TODAY, IMPORTRANGE).
+- Bản chất: RAG đưa cho LLM vài đoạn liên quan nhất, không phải toàn bộ giáo trình. Vì vậy mọi khẳng định kiểu "tài liệu có N…/chỉ có…" đều không có căn cứ (ràng buộc cứng số 3).
+- Sửa (prompt, quy tắc 10–11): coi các khối là trích đoạn; với câu hỏi đếm/liệt kê thì chỉ nêu những gì thấy, nói rõ "trong các phần mình tìm được", không chốt tổng số, đưa phần cần danh sách đầy đủ vào `unanswered_parts` (thành `partial` + ticket); học viên bảo thiếu/sai thì chỉ xác nhận điều có trong khối.
+- Kiểm chứng bằng LLM thật: lượt 1 ra `partial` (không chốt tổng, có ticket); "còn thiếu EOMONTH" thì xác nhận kèm nguồn GS-03; "còn thiếu VLOOKUP" (không có trong giáo trình) thì không đồng ý, ra `partial`.
+- Còn tồn tại: câu trả lời cho câu hỏi liệt kê vẫn có thể chưa đầy đủ, nhưng đã nói thật và có ticket. Giảng viên trả lời ticket và duyệt vào FAQ là đủ để các lần sau trả lời đúng. Phương án chưa làm: với câu hỏi đếm/liệt kê, đưa toàn bộ học liệu của lớp vào ngữ cảnh khi kho nhỏ (học liệu mẫu khoảng 4k token). Phương án này chính xác hơn nhưng không mở rộng được khi giáo trình thật lớn, và thêm một nhánh xử lý cần giải thích.
+
+## Phase 6 — Giám sát & chi phí
+
+### D-69. Ghi đủ "sự thật" để tính tiền: token + tên model trên từng nguồn chi phí (migration 0003)
+- `request_logs.embedding_model`, `documents.embedding_model`, `faq_entries.embedding_tokens/embedding_model` (đóng D-67). Mỗi khoản chi đều biết đã dùng bao nhiêu token của model nào: LLM (gồm cả lượt viết lại câu hỏi), embedding câu truy vấn, embedding lúc ingest (mọi version, kể cả version đã `superseded`, vì đã trả tiền), embedding lúc duyệt FAQ.
+- Dòng cũ (trước 0003) không có tên model embedding thì tạm tính theo `EMBEDDING_MODEL` hiện tại. Đây là xấp xỉ, đã ghi rõ trong code.
+- Thêm index `request_logs(created_at)` cho thống kê theo khoảng ngày trên mọi lớp.
+
+### D-70. Chi phí = token × đơn giá **hiện tại** trong `pricing.yaml`, tính lúc truy vấn; `request_logs.cost_usd` là ảnh chụp lúc ghi
+- Token là dữ liệu thật lấy từ response của provider; chi phí là con số suy ra. Đơn giá do người dùng điền tay, có thể điền **sau** khi đã chạy, nên `/admin/stats` tính lại từ token. Điền giá xong thì lịch sử cũ cũng có chi phí.
+- `cost_usd` của từng request được ghi lúc ghi log, để xem chi phí một request cụ thể. Khi đơn giá không đổi thì hai con số khớp nhau (có test).
+- Giá chưa có (null): chi phí là `null`, không phải 0. `pricing.cost_complete = false` và `models_missing_price` nêu tên model. Không có token thì chi phí là 0, nên tin bị bỏ qua hay bị từ chối trước khi gọi LLM vẫn được tính đủ.
+- Tên model kèm ngày do provider trả về (`gpt-x-2026-01-01`) được tra theo tiền tố dài nhất khớp (`gpt-x`).
+- `pricing.yaml` trong repo chỉ có placeholder; có test bảo đảm không ai lỡ commit giá tự bịa.
+- Loại bỏ: chỉ cộng `cost_usd` đã ghi (giá điền sau thì lịch sử mãi là null); hardcode giá (vi phạm CLAUDE.md §11).
+
+### D-71. Latency = từ lúc webhook nhận tin đến lúc gửi trả lời (thời gian học viên chờ), báo trung bình + p95
+- Tính gồm cả thời gian chờ trong hàng đợi, chỉ cho các outcome do bot xử lý (`answered|partial|handoff|refused|error`). Latency của tin bị bỏ qua hay bị trùng chỉ là thời gian của webhook, nếu tính vào sẽ kéo số liệu xuống sai.
+- p95 dùng `percentile_cont(0.95)` của Postgres. Đo thật (OpenAI): một câu đơn lẻ mất 2–6 giây; 8 tin đến cùng lúc mỗi tin mất khoảng 7,5–8,8 giây; có một ngoại lệ 323 giây (job chờ lúc worker bị dừng). Trung bình bị kéo lệch bởi ngoại lệ, nên cần xem thêm p95.
+
+### D-72. "Ngày" = ngày theo giờ Việt Nam
+- SQL nhóm theo `timezone('Asia/Ho_Chi_Minh', created_at)`. Python lọc `from/to` bằng offset cố định +07:00 vì Việt Nam không có giờ mùa hè, và trên Windows Python không có sẵn cơ sở dữ liệu múi giờ (khỏi thêm thư viện `tzdata`). Có test cho mốc 23:59 / 00:01.
+- Các hằng số trong biểu thức GROUP BY được render inline, không dùng tham số bind. Nếu bind, Postgres thấy `$1` ở SELECT và `$2` ở GROUP BY là hai biểu thức khác nhau và báo lỗi.
+
+### D-73. Phạm vi số liệu
+- Tin trùng được thống kê ở dòng `(chưa xác định)`, vì theo CLAUDE.md §5 chống trùng (bước 3) chạy trước khi ánh xạ nhóm sang lớp (bước 4); lọc theo lớp sẽ không thấy các dòng này.
+- `tickets_by_reason` tính mọi request có lý do chuyển giảng viên: `handoff`, `partial` (`partial_coverage`) và `error`. Đối chiếu khớp với bảng `handoff_tickets`.
+- `/admin/security-events` chỉ trả 12 ký tự đầu của user hash: đủ để nhận ra cùng một người, không lộ thêm gì. Chi tiết sự kiện đã được che khi ghi.
+- Kiểm chứng trên stack thật: mọi số đếm, token, ticket theo lý do và sự kiện bảo mật trong `/admin/stats` khớp với SQL tính trực tiếp trên các bảng.

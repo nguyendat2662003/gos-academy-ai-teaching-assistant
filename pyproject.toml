@@ -64,6 +64,10 @@ known-third-party = ["alembic"]
 [tool.ruff.lint.per-file-ignores]
 # fake secrets in tests are intentional; reading small fixture files synchronously is fine in tests
 "tests/**" = ["S105", "S106", "ASYNC240"]
+# LLM prompts are Vietnamese prose; hard-wrapping them at 110 columns hurts review.
+"app/agent/prompts.py" = ["E501"]
+# Student-facing Vietnamese sentences; S105 misreads names like SECRET_WARNING as passwords.
+"app/agent/messages.py" = ["E501", "S105"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
