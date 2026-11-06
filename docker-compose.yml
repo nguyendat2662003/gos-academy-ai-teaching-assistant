@@ -7,6 +7,8 @@ x-app: &app
   volumes:
     # Original uploaded files, kept so documents can be re-indexed (STORAGE_DIR).
     - uploads:/app/data/uploads
+    # Hand-edited config (pricing.yaml, classes.yaml) read-only from the host: edit + restart, no rebuild.
+    - ./config:/app/config:ro
 
 services:
   postgres:
@@ -36,11 +38,13 @@ services:
       timeout: 3s
       retries: 20
 
-  # One-shot: apply migrations and sync config/classes.yaml, then exit.
+  # One-shot: apply migrations, sync config/classes.yaml, ingest data/samples, then exit (D-82).
+  # Ingest skips unchanged content by hash: only the first `up` (or a changed file / embedding model) embeds.
+  # If ingest fails (e.g. wrong embedding key) migrate exits non-zero and api/worker do not start.
   migrate:
     <<: *app
     restart: "no"
-    command: sh -c "alembic upgrade head && python -m app.db.seed"
+    command: sh -c "alembic upgrade head && python -m app.db.seed && python scripts/ingest_samples.py"
     depends_on:
       postgres:
         condition: service_healthy

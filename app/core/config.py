@@ -12,7 +12,10 @@ ProviderName = Literal["gemini", "openai", "fake"]
 class Settings(BaseSettings):
     """All runtime configuration. Secrets are SecretStr so they never show up in repr/logs."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    # hide_input_in_errors: a malformed secret must not be echoed into the startup error / container log.
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore", hide_input_in_errors=True
+    )
 
     app_env: Literal["dev", "prod", "test"] = "dev"
     log_level: str = "INFO"
@@ -22,6 +25,9 @@ class Settings(BaseSettings):
 
     webhook_secret: SecretStr
     admin_api_key: SecretStr
+    # One key per class for its instructor: "GS-KPI-01=<key>,AUTO-N8N-01=<key>". An instructor key only
+    # opens that class's tickets/documents/stats in the admin area (DECISIONS D-83). Empty = admin only.
+    instructor_api_keys: Annotated[dict[str, SecretStr], NoDecode] = {}
     ask_api_key: SecretStr
     user_hash_salt: SecretStr
 
@@ -43,7 +49,7 @@ class Settings(BaseSettings):
     rate_limit_user_per_min: int = Field(default=5, gt=0)
     rate_limit_class_per_min: int = Field(default=30, gt=0)
     retrieval_top_k: int = Field(default=5, gt=0, le=50)
-    retrieval_min_score: float = Field(default=0.3, ge=-1.0, le=1.0)
+    retrieval_min_score: float = Field(default=0.35, ge=-1.0, le=1.0)
     context_max_turns: int = Field(default=6, ge=0)
     context_ttl_minutes: int = Field(default=30, gt=0)
 
@@ -71,6 +77,26 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [p.strip() for p in value.split(",") if p.strip()]
         return value
+
+    @field_validator("instructor_api_keys", mode="before")
+    @classmethod
+    def _parse_instructor_keys(cls, value: object) -> object:
+        """ "CLASS=key,CLASS=key" -> {class: key}. Errors never echo a key back."""
+        if not isinstance(value, str):
+            return value
+        keys: dict[str, str] = {}
+        for item in (p.strip() for p in value.split(",")):
+            if not item:
+                continue
+            class_id, sep, key = (s.strip() for s in item.partition("="))
+            if not sep or not class_id or len(key) < 16:
+                raise ValueError("INSTRUCTOR_API_KEYS: expected CLASS_ID=<key of at least 16 characters>")
+            if class_id in keys:
+                raise ValueError(f"INSTRUCTOR_API_KEYS: class {class_id} listed twice")
+            keys[class_id] = key
+        if len(set(keys.values())) != len(keys):
+            raise ValueError("INSTRUCTOR_API_KEYS: every class needs its own key")
+        return keys
 
     @field_validator("gemini_api_key", "openai_api_key", mode="before")
     @classmethod

@@ -1,99 +1,561 @@
-{% extends "base.html" %}
-{% block title %}Demo 2 nhóm chat – Trợ giảng AI{% endblock %}
-{% block head %}
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>GOS Chat · Mô phỏng nhóm lớp</title>
 <style nonce="{{ nonce }}">
-  .panes { display:grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap:16px; }
-  .pane { display:flex; flex-direction:column; height:calc(100vh - 150px); min-height:420px; }
-  .pane h2 small { font-weight:normal; color:var(--muted); }
-  .log { flex:1; overflow-y:auto; background:#eef1f5; border-radius:8px; padding:10px; display:flex; flex-direction:column; gap:8px; }
-  .bubble { max-width:85%; padding:8px 10px; border-radius:10px; white-space:pre-wrap; word-break:break-word; }
-  .bubble.student { align-self:flex-end; background:#dbeafe; }
-  .bubble.bot { align-self:flex-start; background:#fff; border:1px solid var(--line); }
-  .meta { font-size:11px; color:var(--muted); margin-bottom:2px; }
-  .status { align-self:flex-end; font-size:11px; color:var(--muted); margin-top:-6px; }
-  .compose { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
-  .compose textarea { min-height:56px; }
-  .chips { display:flex; flex-wrap:wrap; gap:6px; }
-  .chips button { padding:2px 8px; font-size:12px; }
-</style>
-{% endblock %}
-{% block content %}
-<p class="muted">Mô phỏng nhóm Zalo. Tin gửi từ đây được server ký HMAC và đi qua đúng webhook <code>/webhooks/mock</code>;
-  trình duyệt không bao giờ thấy WEBHOOK_SECRET. Câu trả lời của bot được đọc lại từ outbox. Cần worker đang chạy.</p>
-<div class="panes">
-  {% for g in groups %}
-  <section class="card pane" data-group="{{ g.group_id }}">
-    <h2>{{ g.class_name }} <small>· {{ g.class_id }} · {{ g.group_id }}</small></h2>
-    <div class="log"></div>
-    <div class="compose">
-      <div class="chips">
-        {% for q in samples.get(g.class_id, []) + samples.get("*", []) %}
-        <button type="button" class="secondary chip" data-text="{{ q }}">{{ q }}</button>
-        {% endfor %}
-      </div>
-      <div class="row">
-        <label class="muted">Học viên <input class="user" value="hv_{{ loop.index }}1" size="8" maxlength="64"></label>
-      </div>
-      <textarea class="text" maxlength="2000">/hoi </textarea>
-      <div class="row"><button type="button" class="send">Gửi</button><span class="msg"></span></div>
-    </div>
-  </section>
-  {% endfor %}
-</div>
-{% endblock %}
-{% block scripts %}
-<script nonce="{{ nonce }}">
-  const KIND = { answer: "trả lời", partial: "trả lời một phần", handoff: "chuyển giảng viên", refusal: "từ chối",
-                 error: "lỗi", notice: "thông báo", instructor: "giảng viên" };
-  const panes = {};
-  document.querySelectorAll(".pane").forEach((pane) => { panes[pane.dataset.group] = pane; });
-  let lastId = 0, polling = false;
-
-  function scrollDown(log) { log.scrollTop = log.scrollHeight; }
-  function addBot(row) {
-    const pane = panes[row.group_id];
-    if (!pane) return;
-    const log = pane.querySelector(".log");
-    log.append(h("div", { class: "bubble bot" },
-      h("div", { class: "meta" }, row.kind === "instructor" ? "Giảng viên (qua bot) " : "Trợ giảng AI ",
-        h("span", { class: "badge b-" + row.kind }, KIND[row.kind] || row.kind)),
-      row.text));
-    scrollDown(log);
+  :root {
+    --blue:#0068ff; --blue-dark:#0050c8; --ink:#081c36; --muted:#7589a3; --line:#dfe2e7; --chat-bg:#ebecf0;
+    --mine:#e5efff; --mine-line:#c7e0ff; --hover:#f3f5f6; --active:#e5efff; --pill:#a9b1bd;
+    --ok:#15803d; --warn:#b45309; --bad:#c81e1e; --violet:#6d28d9;
   }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; overflow:hidden; font:14px/1.45 "Segoe UI", Roboto, system-ui, -apple-system, sans-serif;
+         color:var(--ink); background:#fff; }
+  button { font:inherit; cursor:pointer; }
+  input, select, textarea { font:inherit; color:inherit; }
+  svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; flex:none; }
+  .app { display:grid; grid-template-columns:64px 340px minmax(0, 1fr) auto; grid-template-rows:100vh; height:100vh; overflow:hidden; }
+  .app > * { min-height:0; overflow:hidden; }  /* only .msgs / .convs / .events scroll, never the page */
+
+  /* left rail */
+  .rail { background:var(--blue); display:flex; flex-direction:column; align-items:center; padding:16px 0 12px; gap:6px; }
+  .rail .me { width:46px; height:46px; border-radius:50%; background:#4c6ef5; color:#fff; display:grid; place-items:center;
+              font-weight:600; border:2px solid rgba(255,255,255,.85); margin-bottom:14px; }
+  .rail a, .rail button { width:56px; height:52px; border:0; border-radius:8px; background:transparent; color:#fff;
+              display:grid; place-items:center; text-decoration:none; }
+  .rail a:hover, .rail button:hover { background:rgba(0,0,0,.1); }
+  .rail .on { background:var(--blue-dark); }
+  .rail svg { width:26px; height:26px; }
+  .rail .spacer { flex:1; }
+
+  /* conversation list */
+  .list { border-right:1px solid var(--line); display:flex; flex-direction:column; min-width:0; }
+  .list .top { padding:16px 16px 0; }
+  .search { display:flex; align-items:center; gap:8px; }
+  .search label { flex:1; display:flex; align-items:center; gap:6px; background:#eaedf0; border-radius:8px; padding:0 10px; color:var(--muted); }
+  .search input { flex:1; border:0; background:transparent; padding:8px 0; outline:none; min-width:0; }
+  .search .icon-btn { border:0; background:transparent; color:var(--ink); width:32px; height:32px; border-radius:6px; display:grid; place-items:center; }
+  .search .icon-btn:hover { background:var(--hover); }
+  .tabs { display:flex; gap:18px; margin-top:14px; border-bottom:1px solid var(--line); }
+  .tabs button { border:0; background:transparent; padding:6px 0 8px; color:var(--muted); font-weight:600; border-bottom:2px solid transparent; }
+  .tabs button.on { color:var(--blue); border-color:var(--blue); }
+  .convs { overflow-y:auto; flex:1; padding:6px 0; }
+  .conv { display:grid; grid-template-columns:52px minmax(0,1fr) auto; gap:12px; align-items:center; padding:10px 16px;
+          cursor:pointer; border:0; background:transparent; width:100%; text-align:left; }
+  .conv:hover { background:var(--hover); } .conv.on { background:var(--active); }
+  .conv .name { font-size:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .conv .prev { color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .conv .side { display:flex; flex-direction:column; align-items:flex-end; gap:6px; color:var(--muted); font-size:12px; }
+  .unread { background:#e5384a; color:#fff; border-radius:999px; font-size:11px; padding:0 6px; min-width:18px; text-align:center; }
+  .conv.has-unread .name, .conv.has-unread .prev { font-weight:600; color:var(--ink); }
+  .note { margin:10px 16px; padding:10px; border-radius:8px; background:#fff8e6; color:#7a5a00; font-size:12.5px; }
+
+  /* avatars */
+  .av { width:48px; height:48px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:600; flex:none; }
+  .av.sm { width:36px; height:36px; font-size:13px; }
+  .av.group { background:linear-gradient(135deg, #38bdf8, #2563eb); }
+  .av.group.auto { background:linear-gradient(135deg, #fb923c, #db2777); }
+  .av.bot { background:linear-gradient(135deg, #22c55e, #0ea5e9); }
+
+  /* chat */
+  .chat { display:flex; flex-direction:column; min-width:0; background:var(--chat-bg); }
+  .head { background:#fff; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; padding:10px 16px; min-height:72px; }
+  .head .title { font-size:18px; font-weight:600; }
+  .head .sub { display:flex; flex-wrap:wrap; align-items:center; gap:8px; color:var(--muted); font-size:13px; }
+  .tag { display:inline-block; border-radius:4px; padding:0 6px; font-size:11px; font-weight:600; background:#e6e9ee; color:#5a6981; letter-spacing:.02em; }
+  .head .grow { flex:1; min-width:0; }
+  .head .icon-btn { border:0; background:transparent; color:var(--ink); width:38px; height:38px; border-radius:6px; display:grid; place-items:center; }
+  .head .icon-btn:hover, .head .icon-btn.on { background:var(--active); color:var(--blue); }
+  .head select { display:none; }
+  .banner { background:#fff; border-bottom:1px solid var(--line); padding:8px 16px; display:flex; gap:8px; align-items:center; color:#5a6981; font-size:13px; }
+  .msgs { flex:1; overflow-y:auto; padding:16px 20px 8px; display:flex; flex-direction:column; gap:2px; }
+  .day { align-self:center; background:var(--pill); color:#fff; border-radius:999px; padding:2px 12px; font-size:12px; margin:12px 0 8px; }
+  .row { display:flex; gap:8px; align-items:flex-end; margin-top:6px; }
+  .row.cont { margin-top:2px; }
+  .row.mine { justify-content:flex-end; }
+  .row .slot { width:36px; flex:none; }
+  .bubble { background:#fff; border-radius:8px; padding:9px 12px 7px; max-width:min(640px, 72%); box-shadow:0 1px 1px rgba(8,28,54,.08);
+            white-space:pre-wrap; word-break:break-word; }
+  .mine .bubble { background:var(--mine); border:1px solid var(--mine-line); }
+  .bubble .who { font-size:12.5px; color:var(--muted); margin-bottom:2px; white-space:normal; }
+  .bubble .meta { display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:12px; color:var(--muted); margin-top:6px; white-space:normal; }
+  .quote { border-left:2px solid var(--blue); padding:2px 0 2px 8px; margin:2px 0 8px; font-size:13px; color:#5a6981; white-space:normal; }
+  .quote b { display:block; color:var(--ink); font-weight:600; }
+  .quote span { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .sources { border-top:1px dashed #d3d9e1; margin-top:8px; padding-top:6px; font-size:13px; color:#3d4a5c; }
+  .kind { border-radius:999px; padding:0 7px; font-size:11px; font-weight:600; border:1px solid transparent; }
+  .k-answer { background:#dcfce7; color:var(--ok); } .k-partial { background:#fef3c7; color:var(--warn); }
+  .k-handoff { background:#ffedd5; color:#c2410c; } .k-refusal, .k-error { background:#fee2e2; color:var(--bad); }
+  .k-notice { background:#e0f2fe; color:#0369a1; } .k-instructor { background:#ede9fe; color:var(--violet); }
+  .receipt { align-self:flex-end; margin:4px 0 2px; background:var(--pill); color:#fff; border-radius:999px; padding:1px 10px; font-size:12px; }
+  .receipt.warn { background:#d9a441; } .receipt.bad { background:#d9534f; }
+  .typing .bubble { color:var(--muted); font-style:italic; }
+  .dots span { display:inline-block; width:5px; height:5px; margin:0 1px; border-radius:50%; background:var(--muted); animation:blink 1.2s infinite; }
+  .dots span:nth-child(2) { animation-delay:.2s; } .dots span:nth-child(3) { animation-delay:.4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity:.2; } 40% { opacity:1; } }
+  .empty { margin:auto; text-align:center; color:var(--muted); max-width:420px; }
+
+  /* composer */
+  .composer { background:#fff; border-top:1px solid var(--line); }
+  .tools { display:flex; align-items:center; gap:4px; padding:6px 12px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .tools .icon-btn { border:0; background:transparent; color:#3d4a5c; height:34px; min-width:34px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; gap:4px; padding:0 6px; }
+  .tools .icon-btn:hover:not(:disabled) { background:var(--hover); }
+  .tools .icon-btn:disabled { color:#b6c0cc; cursor:not-allowed; }
+  .tools .sep { width:1px; height:20px; background:var(--line); margin:0 6px; }
+  .tools label { display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:13px; margin-left:auto; }
+  .tools select { border:1px solid var(--line); border-radius:6px; padding:4px 6px; background:#fff; }
+  .chips { display:none; flex-wrap:wrap; gap:6px; padding:8px 12px; border-bottom:1px solid var(--line); background:#f8fafc; }
+  .chips.open { display:flex; }
+  .chips button { border:1px solid var(--mine-line); background:#fff; color:var(--blue); border-radius:999px; padding:3px 10px; font-size:13px; }
+  .chips button:hover { background:var(--mine); }
+  .input { display:flex; align-items:flex-end; gap:8px; padding:8px 12px 10px; }
+  .input textarea { flex:1; border:0; outline:none; resize:none; min-height:38px; max-height:140px; padding:8px 4px; background:transparent; }
+  .send { border:0; background:transparent; color:var(--blue); width:40px; height:38px; border-radius:6px; display:grid; place-items:center; }
+  .send:hover { background:var(--active); }
+  .send:disabled { color:#b6c0cc; background:transparent; cursor:not-allowed; }
+
+  /* webhook panel */
+  .panel { width:400px; border-left:1px solid var(--line); background:#fff; display:flex; flex-direction:column; min-width:0; }
+  .panel[hidden] { display:none; }
+  .panel .ph { padding:14px 16px 10px; border-bottom:1px solid var(--line); }
+  .panel .ph b { font-size:16px; display:flex; justify-content:space-between; align-items:center; }
+  .panel .ph p { margin:6px 0 0; color:var(--muted); font-size:12.5px; }
+  .panel .ph .icon-btn { border:0; background:transparent; width:30px; height:30px; border-radius:6px; display:grid; place-items:center; color:var(--muted); }
+  .panel .ph .icon-btn:hover { background:var(--hover); }
+  .panel .filter { display:flex; gap:8px; align-items:center; font-size:12.5px; color:var(--muted); margin-top:8px; }
+  .events { flex:1; overflow-y:auto; padding:10px 12px; display:flex; flex-direction:column; gap:10px; background:#f7f8fa; }
+  .ev { background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:12.5px; }
+  .ev.out { border-left:3px solid #22c55e; } .ev.in { border-left:3px solid var(--blue); }
+  .ev .l1 { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .ev .l1 code { font-weight:600; }
+  .ev .l2 { color:var(--muted); margin-top:3px; word-break:break-all; }
+  .st { border-radius:4px; padding:0 6px; font-weight:600; font-size:11.5px; }
+  .st.ok { background:#dcfce7; color:var(--ok); } .st.warn { background:#fef3c7; color:var(--warn); }
+  .st.bad { background:#fee2e2; color:var(--bad); } .st.info { background:#e0f2fe; color:#0369a1; }
+  .ev pre { margin:6px 0 0; background:#0f172a; color:#e2e8f0; border-radius:6px; padding:8px; font-size:11.5px; line-height:1.4;
+            white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto; }
+  .ev details summary { cursor:pointer; color:var(--blue); margin-top:4px; }
+  .ev .acts { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
+  .ev .acts button { border:1px solid var(--line); background:#fff; border-radius:6px; padding:2px 8px; font-size:12px; color:var(--ink); }
+  .ev .acts button:hover { border-color:var(--blue); color:var(--blue); }
+
+  /* login + toast */
+  .overlay { position:fixed; inset:0; background:rgba(8,28,54,.45); display:grid; place-items:center; z-index:10; padding:16px; }
+  .overlay[hidden] { display:none; }
+  .dialog { background:#fff; border-radius:12px; padding:20px; width:min(420px, 100%); box-shadow:0 12px 40px rgba(0,0,0,.25); }
+  .dialog h2 { margin:0 0 6px; font-size:18px; }
+  .dialog p { margin:0 0 12px; color:var(--muted); font-size:13px; }
+  .dialog input { width:100%; border:1px solid var(--line); border-radius:8px; padding:9px 10px; margin-bottom:10px; }
+  .dialog button { width:100%; border:0; background:var(--blue); color:#fff; border-radius:8px; padding:9px; font-weight:600; }
+  .dialog .err { color:var(--bad); min-height:1.2em; font-size:13px; margin-top:8px; }
+  .toasts { position:fixed; left:50%; bottom:110px; transform:translateX(-50%); display:flex; flex-direction:column; gap:6px; z-index:5; }
+  .toast { background:rgba(8,28,54,.88); color:#fff; border-radius:8px; padding:8px 14px; font-size:13px; max-width:520px; }
+
+  @media (max-width: 1180px) {
+    .panel { position:fixed; right:0; top:0; bottom:0; z-index:4; box-shadow:-8px 0 24px rgba(0,0,0,.12); width:min(400px, 100vw); }
+  }
+  @media (max-width: 860px) {
+    .app { grid-template-columns:minmax(0, 1fr); }
+    .rail, .list { display:none; }
+    .head select { display:block; border:1px solid var(--line); border-radius:6px; padding:4px; max-width:46vw; }
+    .bubble { max-width:86%; }
+    .tools label { margin-left:0; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="rail" aria-label="Điều hướng">
+    <div class="me" title="Bạn đang xem với tư cách người điều khiển demo">QT</div>
+    <a class="on" href="/demo" title="Tin nhắn (mô phỏng)" aria-label="Tin nhắn">
+      <svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z"/></svg></a>
+    <a href="/admin/ui" title="Trang quản trị: ticket, FAQ, thống kê" aria-label="Quản trị">
+      <svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></a>
+    <div class="spacer"></div>
+    <button id="logout" type="button" title="Đổi khóa truy cập" aria-label="Đổi khóa">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+  </nav>
+
+  <aside class="list" aria-label="Danh sách hội thoại">
+    <div class="top">
+      <div class="search">
+        <label><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="search" type="search" placeholder="Tìm kiếm" aria-label="Tìm nhóm"></label>
+        <button class="icon-btn" type="button" disabled title="Không dùng trong bản mô phỏng" aria-label="Thêm bạn">
+          <svg viewBox="0 0 24 24"><circle cx="10" cy="8" r="4"/><path d="M3 20a7 7 0 0 1 14 0M19 8v6M16 11h6"/></svg></button>
+      </div>
+      <div class="tabs" role="tablist">
+        <button id="tab-all" class="on" type="button" role="tab">Tất cả</button>
+        <button id="tab-unread" type="button" role="tab">Chưa đọc</button>
+      </div>
+    </div>
+    <div id="convs" class="convs"></div>
+    <div class="note">Bản <b>mô phỏng</b> nhóm chat của lớp, không phải ứng dụng chat thật. Mỗi tin gửi đi là một
+      sự kiện được server ký HMAC và gửi vào <code>POST /webhooks/mock</code> — đúng đường mà nền tảng chat thật
+      sẽ gọi khi được cấp quyền.</div>
+  </aside>
+
+  <main class="chat">
+    <header class="head">
+      <div id="head-av" class="av group"></div>
+      <div class="grow">
+        <div id="head-title" class="title"></div>
+        <div class="sub"><span id="head-sub"></span><span class="tag">MÔ PHỎNG</span><span id="head-class" class="tag"></span></div>
+      </div>
+      <select id="switch" aria-label="Chọn nhóm"></select>
+      <button id="toggle-panel" class="icon-btn on" type="button" title="Sự kiện webhook" aria-label="Sự kiện webhook">
+        <svg viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg></button>
+    </header>
+    <div class="banner"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+      <span>Gõ <b id="trigger-hint"></b> trước câu hỏi để gọi trợ giảng. Tin không có lệnh này bot sẽ bỏ qua (không gọi AI).</span></div>
+    <div id="msgs" class="msgs" aria-live="polite"></div>
+    <div class="composer">
+      <div class="tools">
+        <button class="icon-btn" type="button" disabled title="Không dùng trong bản mô phỏng" aria-label="Gửi ảnh">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-8 8"/></svg></button>
+        <button class="icon-btn" type="button" disabled title="Không dùng trong bản mô phỏng" aria-label="Đính kèm">
+          <svg viewBox="0 0 24 24"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/></svg></button>
+        <span class="sep"></span>
+        <button id="insert-trigger" class="icon-btn" type="button" title="Chèn lệnh gọi trợ giảng"><b id="trigger-btn"></b></button>
+        <button id="toggle-samples" class="icon-btn" type="button" title="Câu hỏi mẫu cho các tình huống thử nghiệm">
+          <svg viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>Câu hỏi mẫu</button>
+        <label>Gửi với tư cách <select id="sender"></select></label>
+      </div>
+      <div id="chips" class="chips"></div>
+      <div class="input">
+        <textarea id="text" rows="1" maxlength="2000"></textarea>
+        <button id="send" class="send" type="button" title="Gửi (Enter)" aria-label="Gửi">
+          <svg viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+      </div>
+    </div>
+  </main>
+
+  <aside id="panel" class="panel" aria-label="Sự kiện webhook">
+    <div class="ph">
+      <b>Sự kiện webhook <button id="close-panel" class="icon-btn" type="button" aria-label="Đóng">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></b>
+      <p><span class="st info">→ vào</span> nền tảng chat gửi sự kiện tới <code>/webhooks/mock</code> (đã ký HMAC + timestamp).
+        <span class="st ok">← ra</span> bot gửi trả lời qua adapter (ghi vào outbox). Chữ ký và secret không bao giờ hiện ở đây.</p>
+      <label class="filter"><input id="only-group" type="checkbox" checked> Chỉ nhóm đang mở</label>
+    </div>
+    <div id="events" class="events"></div>
+  </aside>
+</div>
+
+<div id="login" class="overlay" hidden>
+  <form id="login-form" class="dialog">
+    <h2>Demo nhóm chat</h2>
+    <p>Nhập khóa quản trị (ADMIN_API_KEY) để gửi sự kiện mô phỏng. Khóa chỉ lưu trong tab này. Khóa giảng viên
+      không mở được demo.</p>
+    <input id="login-key" type="password" autocomplete="off" placeholder="Khóa quản trị" aria-label="Khóa quản trị">
+    <button type="submit">Vào demo</button>
+    <div id="login-err" class="err"></div>
+  </form>
+</div>
+<div id="toasts" class="toasts"></div>
+
+{% include "_helpers.html" %}
+<script nonce="{{ nonce }}">
+  const GROUPS = {{ groups|tojson }};
+  const SAMPLES = {{ samples|tojson }};
+  const TRIGGER = {{ trigger|tojson }};
+  const PEOPLE = [
+    { id: "hv_an", name: "Học viên An", color: "#7c3aed" },
+    { id: "hv_binh", name: "Học viên Bình", color: "#0891b2" },
+    { id: "hv_chi", name: "Học viên Chi", color: "#db2777" },
+    { id: "bot_khac", name: "Một tài khoản bot khác", color: "#64748b", bot: true },  // loop protection demo
+  ];
+  const BOT = "Trợ giảng GOS";
+  const KIND = { answer: "Trả lời có nguồn", partial: "Trả lời một phần", handoff: "Chuyển giảng viên",
+                 refusal: "Từ chối", error: "Lỗi", notice: "Thông báo", instructor: "Giảng viên trả lời" };
+  const SOURCES = "📚 Nguồn: ";
+  const STORE = "gos_demo_v1";
+  const $ = (id) => document.getElementById(id);
+
+  // ---------------------------------------------------------------- state (group messages typed here are kept
+  // in this tab only; bot messages are always re-read from the server's outbox)
+  let state = { active: GROUPS.length ? GROUPS[0].group_id : null, sender: PEOPLE[0].id, users: {}, events: [], panel: true };
+  const bots = {};      // group_id -> outbox rows
+  const unread = {};    // group_id -> count
+  const pending = {};   // msg_id -> {group, since}: waiting for the bot's reply
+  let lastId = 0, firstLoad = true, polling = false, tab = "all";
+  try { Object.assign(state, JSON.parse(sessionStorage.getItem(STORE) || "{}")); } catch {}
+  if (!GROUPS.some((g) => g.group_id === state.active) && GROUPS.length) state.active = GROUPS[0].group_id;
+  function save() {
+    try { sessionStorage.setItem(STORE, JSON.stringify({ ...state, events: state.events.slice(-80) })); } catch {}
+  }
+  const group = (id) => GROUPS.find((g) => g.group_id === id);
+  const person = (id) => PEOPLE.find((p) => p.id === id) || { id, name: id, color: "#64748b" };
+  const pad = (n) => String(n).padStart(2, "0");
+  const hhmm = (t) => { const d = new Date(t); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+  const stamp = (t) => { const d = new Date(t); return hhmm(t) + " " + pad(d.getDate()) + "/" + pad(d.getMonth() + 1) + "/" + d.getFullYear(); };
+  const initials = (name) => name.split(/\s+/).filter(Boolean).slice(-2).map((w) => w[0]).join("").toUpperCase();
+  const isAuto = (g) => /AUTO/i.test(g.class_id);
+
+  function avatar(kind, label, color, small) {
+    const el = h("div", { class: "av" + (small ? " sm" : "") + " " + kind }, label);
+    if (color) el.style.background = color;
+    return el;
+  }
+  function groupAvatar(g, small) {
+    return avatar("group" + (isAuto(g) ? " auto" : ""), isAuto(g) ? "AU" : "GS", null, small);
+  }
+
+  // A group's timeline: messages typed here + bot messages from the outbox, by time.
+  function timeline(gid) {
+    const users = (state.users[gid] || []).map((m) => ({ ...m, type: "user", at: m.at }));
+    const botRows = (bots[gid] || []).map((r) => ({ ...r, type: "bot", at: Date.parse(r.created_at) }));
+    return users.concat(botRows).sort((a, b) => a.at - b.at);
+  }
+  function preview(item) {
+    if (!item) return "Chưa có tin nhắn";
+    const who = item.type === "bot" ? BOT : person(item.sender).name;
+    return who + ": " + item.text.split("\n")[0];
+  }
+
+  // ---------------------------------------------------------------- conversation list
+  function renderList() {
+    const q = $("search").value.trim().toLowerCase();
+    $("convs").replaceChildren(...GROUPS
+      .filter((g) => !q || (g.class_name + " " + g.class_id).toLowerCase().includes(q))
+      .filter((g) => tab === "all" || unread[g.group_id])
+      .map((g) => {
+        const items = timeline(g.group_id), last = items[items.length - 1], n = unread[g.group_id] || 0;
+        return h("button", { type: "button", class: "conv" + (g.group_id === state.active ? " on" : "") + (n ? " has-unread" : ""),
+                             onclick: () => openGroup(g.group_id) },
+          groupAvatar(g),
+          h("div", {}, h("div", { class: "name" }, "Lớp " + g.class_name), h("div", { class: "prev" }, preview(last))),
+          h("div", { class: "side" }, last ? hhmm(last.at) : "", n ? h("span", { class: "unread" }, n > 9 ? "9+" : String(n)) : ""));
+      }));
+    $("switch").replaceChildren(...GROUPS.map((g) => {
+      const o = h("option", { value: g.group_id }, "Lớp " + g.class_name);
+      o.selected = g.group_id === state.active;
+      return o;
+    }));
+  }
+
+  // ---------------------------------------------------------------- chat
+  function receipt(m) {
+    const r = m.result || {};
+    if (m.status === "sending") return ["Đang gửi…", ""];
+    if (m.http && m.http !== 200) return ["Webhook từ chối (" + m.http + ")", "bad"];
+    switch (r.status) {
+      case "queued": return ["✓✓ Đã nhận", ""];
+      case "duplicate": return ["Sự kiện trùng: không xử lý lại", "warn"];
+      case "rate_limited": return ["Bị giới hạn tần suất", "warn"];
+      case "ignored": return [{ no_trigger: "Đã gửi · bot không xử lý (thiếu " + TRIGGER + ")", from_bot: "Bỏ qua: tin do bot gửi (chống vòng lặp)",
+        class_disabled: "Bỏ qua: bot đang tắt ở lớp này", empty_question: "Bỏ qua: chưa có câu hỏi sau lệnh",
+        unmapped_group: "Bỏ qua: nhóm chưa gắn lớp" }[r.reason] || "Bỏ qua (" + r.reason + ")", "warn"];
+      default: return [m.status === "failed" ? "Không gửi được" : "Đã gửi", m.status === "failed" ? "bad" : ""];
+    }
+  }
+  function findUserMsg(msgId) {
+    for (const list of Object.values(state.users)) for (const m of list) if (m.msg_id === msgId) return m;
+    return null;
+  }
+  function botBubble(m) {
+    const cut = m.text.lastIndexOf(SOURCES);
+    const body = cut > 0 ? m.text.slice(0, cut).trimEnd() : m.text;
+    const quoted = m.reply_to ? findUserMsg(m.reply_to) : null;
+    return h("div", { class: "bubble" },
+      h("div", { class: "who" }, BOT),
+      quoted ? h("div", { class: "quote" }, h("b", {}, person(quoted.sender).name), h("span", {}, quoted.text)) : "",
+      body,
+      cut > 0 ? h("div", { class: "sources" }, m.text.slice(cut)) : "",
+      h("div", { class: "meta" }, hhmm(m.at), h("span", { class: "kind k-" + m.kind }, KIND[m.kind] || m.kind)));
+  }
+  function renderChat() {
+    const g = group(state.active);
+    if (!g) { $("msgs").replaceChildren(h("div", { class: "empty" }, "Chưa có nhóm mô phỏng nào trong config/classes.yaml.")); return; }
+    $("head-av").replaceWith(Object.assign(groupAvatar(g), { id: "head-av" }));
+    $("head-title").textContent = "Lớp " + g.class_name;
+    $("head-sub").textContent = "Nhóm · " + (PEOPLE.length) + " thành viên · " + g.group_id;
+    $("head-class").textContent = g.class_id;
+    $("text").placeholder = "Nhập " + TRIGGER + " + câu hỏi, tin nhắn tới Lớp " + g.class_name;
+    const items = timeline(g.group_id), out = [];
+    let prev = null;
+    for (const m of items) {
+      if (!prev || m.at - prev.at > 30 * 60 * 1000 || new Date(m.at).toDateString() !== new Date(prev.at).toDateString())
+        out.push(h("div", { class: "day" }, stamp(m.at)));
+      const who = m.type === "bot" ? "bot" : m.sender;
+      const cont = prev && (prev.type === "bot" ? "bot" : prev.sender) === who && m.at - prev.at < 3 * 60 * 1000;
+      if (m.type === "bot") {
+        out.push(h("div", { class: "row" + (cont ? " cont" : "") }, cont ? h("div", { class: "slot" }) : avatar("bot", "AI", null, true), botBubble(m)));
+      } else {
+        const p = person(m.sender), mine = m.sender === state.sender;
+        const bubble = h("div", { class: "bubble" }, mine || cont ? "" : h("div", { class: "who" }, p.name), m.text,
+                         h("div", { class: "meta" }, hhmm(m.at)));
+        out.push(h("div", { class: "row" + (mine ? " mine" : "") + (cont ? " cont" : "") },
+          mine ? "" : (cont ? h("div", { class: "slot" }) : avatar("", initials(p.name), p.color, true)), bubble));
+        if (mine) { const [t, k] = receipt(m); out.push(h("div", { class: "receipt " + k }, t)); }
+      }
+      prev = m;
+    }
+    const waiting = Object.entries(pending).filter(([, p]) => p.group === g.group_id);
+    if (waiting.length) {
+      const slow = waiting.some(([, p]) => Date.now() - p.since > 15000);
+      out.push(h("div", { class: "row typing" }, avatar("bot", "AI", null, true),
+        h("div", { class: "bubble" }, BOT + " đang trả lời ", h("span", { class: "dots" }, h("span"), h("span"), h("span")),
+          slow ? " (đang chờ worker…)" : "")));
+    }
+    if (!items.length && !waiting.length)
+      out.push(h("div", { class: "empty" }, "Chưa có tin nhắn. Thử một câu hỏi mẫu, hoặc gõ " + TRIGGER + " + câu hỏi."));
+    const box = $("msgs"), atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+    box.replaceChildren(...out);
+    if (atBottom || renderChat.force) box.scrollTop = box.scrollHeight;
+    renderChat.force = false;
+  }
+  function openGroup(gid) {
+    state.active = gid; unread[gid] = 0; renderChat.force = true;
+    save(); renderAll(); $("text").focus();
+  }
+
+  // ---------------------------------------------------------------- composer
+  function renderComposer() {
+    $("trigger-hint").textContent = TRIGGER; $("trigger-btn").textContent = TRIGGER;
+    $("sender").replaceChildren(...PEOPLE.map((p) => {
+      const o = h("option", { value: p.id }, p.name);
+      o.selected = p.id === state.sender;
+      return o;
+    }));
+    const g = group(state.active);
+    const qs = g ? (SAMPLES[g.class_id] || []).concat(SAMPLES["*"] || []) : [];
+    $("chips").replaceChildren(...qs.map((q) => h("button", { type: "button", onclick: () => {
+      $("text").value = TRIGGER + " " + q; grow(); $("chips").classList.remove("open"); $("text").focus(); } }, q)),
+      h("button", { type: "button", onclick: () => { $("text").value = "Chào cả lớp, mai mình nghỉ nhé"; grow(); $("chips").classList.remove("open"); } },
+        "(tin thường, không có " + TRIGGER + ")"));
+  }
+  function grow() { const t = $("text"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 140) + "px"; }
+
+  async function send() {
+    const text = $("text").value.trim(), gid = state.active;
+    if (!text || !gid) return;
+    const p = person(state.sender);
+    const m = { sender: p.id, text, at: Date.now(), status: "sending" };
+    (state.users[gid] = state.users[gid] || []).push(m);
+    $("text").value = ""; grow(); renderChat.force = true; renderAll();
+    try {
+      const d = await (await api("/demo/api/send", { method: "POST", json: { group_id: gid, user_id: p.id, text, is_bot: !!p.bot } })).json();
+      Object.assign(m, { status: "sent", http: d.http_status, result: d.result, msg_id: d.msg_id, event_id: d.event_id });
+      logIn(gid, d.event, d, "gửi");
+      if (d.http_status === 200 && d.result.status === "queued") pending[d.msg_id] = { group: gid, since: Date.now() };
+    } catch (e) { m.status = "failed"; toast(e.message); }
+    save(); renderAll();
+  }
+  async function replay(ev, times) {
+    try {
+      const results = await (await api("/demo/api/replay", { method: "POST", json: { event: ev.event, times } })).json();
+      results.forEach((d, i) => logIn(ev.group, ev.event, d, times > 1 ? "đồng thời #" + (i + 1) : "gửi lại"));
+      const counts = results.map((d) => d.result.status).join(" + ");
+      toast("Webhook nhận lại " + ev.event.event_id + " (" + times + " lần): " + counts +
+            (results.some((d) => d.result.status === "queued") ? "" : " → không xử lý lần nữa, không trả lời lại"));
+      save(); renderEvents();
+    } catch (e) { toast(e.message); }
+  }
+
+  // ---------------------------------------------------------------- webhook panel
+  function logIn(gid, event, d, label) {
+    state.events.push({ dir: "in", at: Date.now(), group: gid, event, http: d.http_status, result: d.result, ts: d.x_timestamp, label });
+  }
+  function logOut(row) {
+    state.events.push({ dir: "out", at: Date.parse(row.created_at), group: row.group_id, id: row.id, kind: row.kind, reply_to: row.reply_to });
+  }
+  function statusBadge(e) {
+    const r = e.result || {};
+    const cls = e.http !== 200 ? "bad" : r.status === "queued" ? "ok" : "warn";
+    return h("span", { class: "st " + cls }, e.http + " " + (r.status || "") + (r.reason ? " · " + r.reason : ""));
+  }
+  function renderEvents() {
+    const only = $("only-group").checked;
+    const list = state.events.filter((e) => !only || e.group === state.active).slice(-60).reverse();
+    $("events").replaceChildren(...(list.length ? list.map((e) => {
+      const g = group(e.group), gname = g ? g.class_id : e.group;
+      if (e.dir === "out") {
+        return h("div", { class: "ev out" },
+          h("div", { class: "l1" }, h("span", { class: "st ok" }, "← ra"), h("code", {}, "adapter.send_reply"),
+            h("span", { class: "kind k-" + e.kind }, KIND[e.kind] || e.kind)),
+          h("div", { class: "l2" }, hhmm(e.at) + " · " + gname + " · outbox #" + e.id + (e.reply_to ? " · reply_to " + e.reply_to : "")));
+      }
+      const payload = JSON.stringify(e.event, null, 2);
+      return h("div", { class: "ev in" },
+        h("div", { class: "l1" }, h("span", { class: "st info" }, "→ vào"), h("code", {}, "POST /webhooks/mock"), statusBadge(e),
+          e.label !== "gửi" ? h("span", { class: "st warn" }, e.label) : ""),
+        h("div", { class: "l2" }, hhmm(e.at) + " · " + gname + " · " + e.event.event_id),
+        h("details", {}, h("summary", {}, "Header + payload"),
+          h("pre", {}, "X-Timestamp: " + e.ts + "\nX-Signature: HMAC-SHA256(WEBHOOK_SECRET, timestamp.body)  [ký phía server, ẩn]\n\n" + payload),
+          h("pre", {}, "← " + e.http + " " + JSON.stringify(e.result))),
+        h("div", { class: "acts" },
+          h("button", { type: "button", onclick: () => replay(e, 1), title: "Kịch bản 6: webhook gửi lại cùng event_id" }, "Gửi lại y hệt"),
+          h("button", { type: "button", onclick: () => replay(e, 2), title: "Hai bản giống hệt đến cùng lúc" }, "Gửi 2 lần đồng thời")));
+    }) : [h("div", { class: "l2" }, "Chưa có sự kiện. Gửi một tin nhắn để xem payload webhook.")]));
+  }
+  function setPanel(on) {
+    state.panel = on; $("panel").hidden = !on; $("toggle-panel").classList.toggle("on", on); save();
+  }
+
+  // ---------------------------------------------------------------- polling the outbox
   async function poll() {
-    if (polling || !store.get()) return;
+    if (polling || !store.get() || $("login").hidden === false) return;
     polling = true;
     try {
-      const rows = await (await api("/demo/api/messages?after=" + lastId)).json();
-      for (const row of rows) { addBot(row); lastId = Math.max(lastId, row.id); }
+      const rows = await (await api("/demo/api/messages" + (lastId ? "?after=" + lastId : ""))).json();
+      for (const r of rows) {
+        if (lastId && r.id <= lastId) continue;
+        (bots[r.group_id] = bots[r.group_id] || []).push(r);
+        lastId = Math.max(lastId, r.id);
+        if (r.reply_to) delete pending[r.reply_to];
+        if (!firstLoad) {
+          logOut(r);
+          if (r.group_id !== state.active) unread[r.group_id] = (unread[r.group_id] || 0) + 1;
+        }
+      }
+      for (const [k, p] of Object.entries(pending)) if (Date.now() - p.since > 90000) delete pending[k];
+      if (rows.length || Object.keys(pending).length || firstLoad) { firstLoad = false; save(); renderAll(); }
     } catch (e) { /* key missing or server restarting: retry on the next tick */ }
     polling = false;
   }
-  async function send(pane) {
-    const textEl = pane.querySelector(".text"), out = pane.querySelector(".msg"), log = pane.querySelector(".log");
-    const text = textEl.value.trim(), user = pane.querySelector(".user").value.trim();
-    if (!text) return;
-    log.append(h("div", { class: "bubble student" }, h("div", { class: "meta" }, user), text));
-    const status = h("div", { class: "status" }, "đang gửi…");
-    log.append(status); scrollDown(log);
+
+  // ---------------------------------------------------------------- misc
+  function toast(text) {
+    const t = h("div", { class: "toast" }, text);
+    $("toasts").append(t); setTimeout(() => t.remove(), 5000);
+  }
+  function renderAll() { renderList(); renderChat(); renderComposer(); renderEvents(); }
+
+  async function login(key) {
+    store.set(key);
     try {
-      const data = await (await api("/demo/api/send", { method: "POST",
-        json: { group_id: pane.dataset.group, user_id: user, text } })).json();
-      const r = data.result || {};
-      status.textContent = "webhook " + data.http_status + ": " + (r.status || "?") + (r.reason ? " (" + r.reason + ")" : "");
-      textEl.value = "/hoi "; say(out, "");
-    } catch (e) { status.textContent = "không gửi được"; say(out, e.message, "err"); }
+      const me = await (await api("/admin/me")).json();
+      if (me.role !== "admin") throw new Error("Đây là khóa giảng viên (" + me.class_id + "). Demo cần khóa quản trị.");
+      $("login").hidden = true; poll();
+      return true;
+    } catch (e) { $("login-err").textContent = e.message; $("login").hidden = false; return false; }
   }
-  for (const pane of Object.values(panes)) {
-    pane.querySelector(".send").addEventListener("click", () => send(pane));
-    pane.querySelector(".text").addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); send(pane); }
-    });
-    pane.querySelectorAll(".chip").forEach((chip) => chip.addEventListener("click", () => {
-      pane.querySelector(".text").value = "/hoi " + chip.dataset.text; pane.querySelector(".text").focus();
-    }));
-  }
-  document.addEventListener("keychange", poll);
-  setInterval(poll, 1500); poll();
+  $("login-form").addEventListener("submit", (ev) => { ev.preventDefault(); login($("login-key").value.trim()); });
+  $("logout").addEventListener("click", () => { $("login-key").value = ""; $("login-err").textContent = ""; $("login").hidden = false; $("login-key").focus(); });
+  $("send").addEventListener("click", send);
+  $("text").addEventListener("input", grow);
+  $("text").addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); send(); } });
+  $("insert-trigger").addEventListener("click", () => {
+    const t = $("text"); if (!t.value.startsWith(TRIGGER)) t.value = TRIGGER + " " + t.value.trimStart(); t.focus(); grow(); });
+  $("toggle-samples").addEventListener("click", () => $("chips").classList.toggle("open"));
+  $("sender").addEventListener("change", (ev) => { state.sender = ev.target.value; save(); renderChat(); });
+  $("switch").addEventListener("change", (ev) => openGroup(ev.target.value));
+  $("search").addEventListener("input", renderList);
+  $("tab-all").addEventListener("click", () => { tab = "all"; $("tab-all").classList.add("on"); $("tab-unread").classList.remove("on"); renderList(); });
+  $("tab-unread").addEventListener("click", () => { tab = "unread"; $("tab-unread").classList.add("on"); $("tab-all").classList.remove("on"); renderList(); });
+  $("toggle-panel").addEventListener("click", () => setPanel($("panel").hidden));
+  $("close-panel").addEventListener("click", () => setPanel(false));
+  $("only-group").addEventListener("change", renderEvents);
+
+  setPanel(state.panel !== false && window.innerWidth > 1180);
+  renderChat.force = true; renderAll();
+  if (store.get()) login(store.get()); else $("login").hidden = false;
+  setInterval(() => { poll(); if (Object.keys(pending).length) renderChat(); }, 1500);
 </script>
-{% endblock %}
+</body>
+</html>

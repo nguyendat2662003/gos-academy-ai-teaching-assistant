@@ -18,10 +18,10 @@ models:
     input: 0
   # Chosen models (DECISIONS D-35). Fill in from the official OpenAI pricing page, then set checked_at.
   gpt-6-luna:
-    input: null
-    output: null
+    input: 0.1
+    output: 0.5
   gpt-5.6-luna:
-    input: null
-    output: null
+    input: 0.2
+    output: 1.2
   text-embedding-3-small:
-    input: null
+    input: 0.02

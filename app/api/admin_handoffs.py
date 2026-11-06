@@ -1,5 +1,9 @@
 """Admin API for instructor handoff tickets: list, answer (optionally post to the group), promote to FAQ,
-export CSV (X-Admin-Key). CLAUDE.md §10."""
+export CSV (X-Admin-Key). CLAUDE.md §10.
+
+Roles (D-83): an instructor key sees and handles only its own class's tickets (another class's ticket answers
+404); FAQ entries it approves record the instructor's name from classes.yaml, not a name typed by the client.
+"""
 
 import csv
 import io
@@ -12,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent import messages
 from app.api.admin_documents import embedding_provider
-from app.api.deps import require_admin
+from app.api.deps import Principal, require_staff
 from app.channels.registry import get_adapter
 from app.core.classes import get_registry
 from app.core.redact import redact
@@ -21,7 +25,7 @@ from app.db.session import get_session
 from app.ingestion.faq import PromoteError, promote_ticket
 from app.providers.base import EmbeddingProvider
 
-router = APIRouter(prefix="/admin/handoffs", tags=["admin"], dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/admin/handoffs", tags=["admin"], dependencies=[Depends(require_staff)])
 
 CSV_COLUMNS = [
     "code",
@@ -89,16 +93,16 @@ class PromoteRequest(BaseModel):
 
     question: str | None = Field(default=None, max_length=2000)
     answer: str | None = Field(default=None, max_length=4000)
-    approved_by: str | None = Field(default=None, max_length=255)
+    approved_by: str | None = Field(default=None, max_length=255)  # admin only; instructor = their own name
 
 
 def _has_group(t: HandoffTicket) -> bool:
     return bool(t.channel and t.channel != "api" and t.external_group_id)
 
 
-async def _get_ticket(session: AsyncSession, ticket_id: int) -> HandoffTicket:
+async def _get_ticket(session: AsyncSession, ticket_id: int, principal: Principal) -> HandoffTicket:
     ticket = await session.get(HandoffTicket, ticket_id)
-    if ticket is None:
+    if ticket is None or not principal.owns(ticket.class_id):  # never reveal another class's ticket
         raise HTTPException(404, "ticket not found")
     return ticket
 
@@ -118,8 +122,10 @@ async def list_tickets(
     status: TicketStatus | None = None,
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(require_staff),
 ) -> list[TicketOut]:
-    rows = (await session.execute(_filtered(class_id, status).limit(limit))).scalars()
+    stmt = _filtered(principal.class_filter(class_id), status)
+    rows = (await session.execute(stmt.limit(limit))).scalars()
     return [TicketOut.of(t) for t in rows]
 
 
@@ -134,7 +140,9 @@ async def export_csv(
     class_id: str | None = None,
     status: TicketStatus | None = None,
     session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(require_staff),
 ) -> Response:
+    class_id = principal.class_filter(class_id)
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(CSV_COLUMNS)
@@ -163,16 +171,23 @@ async def export_csv(
 
 
 @router.get("/{ticket_id}")
-async def get_ticket(ticket_id: int, session: AsyncSession = Depends(get_session)) -> TicketOut:
-    return TicketOut.of(await _get_ticket(session, ticket_id))
+async def get_ticket(
+    ticket_id: int,
+    session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(require_staff),
+) -> TicketOut:
+    return TicketOut.of(await _get_ticket(session, ticket_id, principal))
 
 
 @router.patch("/{ticket_id}")
 async def update_ticket(
-    ticket_id: int, body: TicketUpdate, session: AsyncSession = Depends(get_session)
+    ticket_id: int,
+    body: TicketUpdate,
+    session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(require_staff),
 ) -> dict[str, object]:
     """Save the instructor's answer / status / assignee; optionally post the answer to the group."""
-    ticket = await _get_ticket(session, ticket_id)
+    ticket = await _get_ticket(session, ticket_id, principal)
     if body.assignee is not None:
         ticket.assignee = body.assignee.strip() or None
     if body.instructor_answer is not None:
@@ -215,10 +230,12 @@ async def promote(
     body: PromoteRequest | None = None,
     session: AsyncSession = Depends(get_session),
     embedder: EmbeddingProvider = Depends(embedding_provider),
+    principal: Principal = Depends(require_staff),
 ) -> dict[str, object]:
     """'Duyệt vào FAQ': the answer becomes an active FAQ entry of the ticket's class, indexed immediately."""
     body = body or PromoteRequest()
-    ticket = await _get_ticket(session, ticket_id)
+    ticket = await _get_ticket(session, ticket_id, principal)
+    approved_by = body.approved_by if principal.is_admin else principal.name
     class_name = next((c.name for c in get_registry().classes if c.id == ticket.class_id), ticket.class_id)
     try:
         entry, tokens = await promote_ticket(
@@ -227,7 +244,7 @@ async def promote(
             class_name=class_name,
             question=body.question,
             answer=body.answer,
-            approved_by=body.approved_by,
+            approved_by=approved_by,
             embedder=embedder,
         )
     except PromoteError as exc:

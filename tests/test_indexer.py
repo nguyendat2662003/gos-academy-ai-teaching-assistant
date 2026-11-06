@@ -274,3 +274,33 @@ async def test_uploaded_filename_cannot_escape_storage(client) -> None:
         headers=ADMIN,
     )
     assert resp.status_code == 200 and resp.json()["filename"] == "evil.docx"
+
+
+# ------------------------------------------------------------------ scripts/ingest_samples.py
+
+
+async def test_ingest_samples_script_is_idempotent_and_fails_loudly(
+    clean_state, db_session, monkeypatch, capsys
+) -> None:
+    """`docker compose up` runs the script every time (D-82): the 2nd run embeds nothing, and a broken
+    embedding provider gives exit code 1 so `migrate` fails instead of starting a bot with no material."""
+    from scripts import ingest_samples
+
+    embedder = FakeEmbeddingProvider("fake-embedding", 768)
+    monkeypatch.setattr(ingest_samples, "get_embedding_provider", lambda: embedder)
+    assert await ingest_samples.main([]) == 0
+    first = embedder.calls
+    assert first > 0 and len(await active_chunks(db_session)) == 32
+    assert await ingest_samples.main([]) == 0
+    assert embedder.calls == first  # unchanged content: skipped by hash, no embedding call
+    capsys.readouterr()
+
+    class BrokenEmbedder(FakeEmbeddingProvider):
+        async def embed(self, texts, kind):  # type: ignore[no-untyped-def,override]
+            raise PermissionError("401 invalid api key")
+
+    monkeypatch.setattr(ingest_samples, "get_embedding_provider", lambda: BrokenEmbedder("other-model", 768))
+    assert await ingest_samples.main([]) == 1  # new model -> must re-embed -> fails
+    out = capsys.readouterr().out
+    assert "INGEST FAILED" in out and "invalid api key" not in out  # only the error type is printed
+    assert len(await active_chunks(db_session)) == 32  # previous version stays active

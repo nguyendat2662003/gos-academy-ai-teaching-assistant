@@ -1,4 +1,8 @@
-"""Monitoring API (X-Admin-Key): usage/cost statistics and security events. CLAUDE.md §11–12."""
+"""Monitoring API (X-Admin-Key): usage/cost statistics and security events. CLAUDE.md §11–12.
+
+Roles (D-83): an instructor key gets the stats of its own class only; security events are admin only (they
+include events with no class, e.g. invalid webhook signatures).
+"""
 
 from datetime import date, datetime
 
@@ -7,14 +11,14 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_admin
+from app.api.deps import Principal, require_admin, require_staff
 from app.core.config import get_settings
 from app.core.pricing import get_pricing
 from app.db.models import SecurityEvent, SecurityEventType
 from app.db.session import get_session
 from app.db.stats import StatsFilter, compute_stats
 
-router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_staff)])
 
 
 def stats_filter(
@@ -23,10 +27,11 @@ def stats_filter(
         default=None, alias="from", description="YYYY-MM-DD, Vietnam time, inclusive"
     ),
     date_to: date | None = Query(default=None, alias="to", description="YYYY-MM-DD, inclusive"),
+    principal: Principal = Depends(require_staff),
 ) -> StatsFilter:
     if date_from and date_to and date_from > date_to:
         raise HTTPException(422, "'from' must not be after 'to'")
-    return StatsFilter(class_id=class_id or None, date_from=date_from, date_to=date_to)
+    return StatsFilter(class_id=principal.class_filter(class_id), date_from=date_from, date_to=date_to)
 
 
 @router.get("/stats")
@@ -50,7 +55,7 @@ class SecurityEventOut(BaseModel):
     request_id: str | None
 
 
-@router.get("/security-events")
+@router.get("/security-events", dependencies=[Depends(require_admin)])
 async def security_events(
     f: StatsFilter = Depends(stats_filter),
     type: SecurityEventType | None = None,  # noqa: A002 - public query parameter name

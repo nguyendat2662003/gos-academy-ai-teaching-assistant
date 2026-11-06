@@ -360,3 +360,73 @@ Cosine top-1 đo được trên 14 câu thật (8 tin mẫu HR + các tình hu�
 - `tickets_by_reason` tính mọi request có lý do chuyển giảng viên: `handoff`, `partial` (`partial_coverage`) và `error`. Đối chiếu khớp với bảng `handoff_tickets`.
 - `/admin/security-events` chỉ trả 12 ký tự đầu của user hash: đủ để nhận ra cùng một người, không lộ thêm gì. Chi tiết sự kiện đã được che khi ghi.
 - Kiểm chứng trên stack thật: mọi số đếm, token, ticket theo lý do và sự kiện bảo mật trong `/admin/stats` khớp với SQL tính trực tiếp trên các bảng.
+
+## Phase 7 — Đánh giá & tài liệu
+
+### D-74. `RETRIEVAL_MIN_SCORE = 0.35`, hiệu chỉnh bằng `eval_rag.py` trên 40 câu golden (embedding OpenAI)
+- Câu có căn cứ: cosine top-1 thấp nhất **0.391** (GS-12 "Công thức trả về 0 thì kiểm tra gì?"), trung vị 0.586. Câu không có căn cứ hoặc thuộc lớp khác: từ 0.333 đến **0.642** (GS-17 "Hàm QUERY…" có điểm cao vì giống chủ đề Google Sheets). Hai nhóm **chồng lên nhau**, nên ngưỡng không thể là lớp chặn chính (khẳng định lại D-60).
+- Ngưỡng 0.35: 30/30 câu có căn cứ đi qua; 2/6 câu không căn cứ bị chặn ngay, không tốn LLM. Biên an toàn so với câu có căn cứ thấp nhất là 0.041. Script tự đề xuất 0.36 (biên 0.03); 0.35 chặn đúng 2 câu đó mà biên rộng hơn, nên chọn 0.35.
+- Lớp chặn chính vẫn là bước kiểm tra JSON + trích dẫn: ở chế độ `--full`, cả 6/6 câu không căn cứ đều thành handoff, không câu nào bị bịa.
+- Chạy `--full` ở 0.35: vẫn quyết định đúng 40/40; GS-20 (0.333) và AU-16 (0.348) chuyển sang `no_context`, không gọi LLM; tổng token LLM giảm từ 73.523 (ngưỡng 0.3) xuống 69.094.
+- Khi thêm học liệu hoặc đổi model embedding, chạy lại `eval_rag.py` và hiệu chỉnh lại.
+
+### D-75. `eval_rag.py --full` chạy pipeline thật trong **một transaction rồi rollback**
+- `AsyncSession(join_transaction_mode="create_savepoint")` trên một connection đã `begin()`. Các lệnh `commit()` trong pipeline chỉ giải phóng savepoint; cuối script rollback toàn bộ. Vì vậy ticket và security event sinh ra khi đánh giá không làm bẩn thống kê. Có test kiểm tra sau eval bảng ticket vẫn rỗng.
+- Gọi `answer_question` trực tiếp (không qua webhook hay outbox): đo đúng quyết định của bot, không gửi tin vào nhóm nào. Mỗi câu dùng một `user_hash` mới, nên không có lịch sử.
+- Loại bỏ: chạy qua webhook rồi xóa dữ liệu sau (dễ sót, xóa nhầm dữ liệu thật); DB riêng cho eval (phải ingest lại bằng embedding thật).
+
+### D-76. Thiết kế bộ golden (`data/eval/golden.yaml`, 40 câu)
+- Mỗi câu ghi `class_id`, `expect` (`answer|partial|handoff|refused`), `sections` chứa đáp án và `kind` (`material|not_in_material|other_class|policy|injection`).
+- Có câu hỏi giống hệt nhau ở 2 lớp, và câu hỏi của lớp này đặt vào nhóm lớp kia (`other_class`), để đo cách ly lớp.
+- Không dùng câu Kubernetes: FAQ #1 tạo khi chạy thử Phase 5 vẫn còn trong DB dev.
+- Test bảo đảm mọi mã mục kỳ vọng có thật trong học liệu (tránh gõ nhầm), và mỗi `kind` đều có câu.
+- Chỉ số: hit@1, hit@k, MRR, chunk lớp khác bị truy xuất hoặc trích dẫn (phải = 0), quyết định đúng (chính xác và theo nhị phân trả lời/không), số câu bịa, trích dẫn đúng mục, token, thời gian.
+- Kết quả thật: [EVAL_RESULTS.md](EVAL_RESULTS.md). Quyết định đúng 40/40, hit@5 100%, rò rỉ 0.
+
+### D-77. `run_scenarios.py` kiểm tra bằng DB, không chỉ đọc câu trả lời
+- 7 tình huống đi qua webhook thật (có ký HMAC) trên stack. Mỗi tình huống có các kiểm tra cụ thể: outcome, lý do ticket, nguồn chỉ thuộc lớp mình + COMMON, key giả không còn ở bảng nào, đúng 1 bản ghi outbox cho event gửi trùng đồng thời, có `security_event`, không gọi LLM cho câu chính sách/injection, phản hồi không chứa giá trị secret nào của server (so sánh trong process, không in ra).
+- Script trả exit code 1 nếu có kiểm tra không đạt, nên dùng được trong CI. Kết quả thật: [SCENARIOS_RESULTS.md](SCENARIOS_RESULTS.md), 7/7 đạt.
+
+### D-78. Tự audit bảo mật thành test (`tests/test_security_audit.py`)
+- Ràng buộc 1:
+  - quét mọi file có thể commit để tìm chuỗi có dạng khóa thật;
+  - `.env` bị ignore; `.env.example` chỉ có placeholder;
+  - log của cả một luồng (gồm chữ ký sai, gọi admin) không chứa key, khóa admin, secret webhook, tên hiển thị, user id thô hay nội dung tin nhắn.
+- Ràng buộc 2: `class_id` của hàm truy xuất là keyword-only và không có mặc định; payload webhook không có trường lớp.
+- Ràng buộc 4: không có thư viện Zalo không chính thức hay công cụ điều khiển trình duyệt trong dependency; adapter Zalo chỉ là khung.
+- Bảng ánh xạ ràng buộc → bằng chứng nằm trong [TEST_REPORT.md](TEST_REPORT.md).
+
+### D-79. `alembic/env.py`: `fileConfig(..., disable_existing_loggers=False)`
+- Mặc định của `logging.config.fileConfig` là vô hiệu hóa mọi logger đã tạo. Khi migration chạy trong cùng process với ứng dụng (fixture test `migrated_db`), logger `app` bị tắt hoàn toàn. Trên Docker không bị vì `migrate` là container riêng.
+- Lỗi được test audit log (D-78) phát hiện: test chỉ hỏng khi chạy sau một test có migration. Sửa ở gốc thay vì bật lại logger trong test.
+
+### D-80. Mount `config/` vào container (chỉ đọc) thay vì chỉ chép vào image
+- Lỗi do người dùng gặp: đã điền giá vào `config/pricing.yaml` nhưng thống kê vẫn báo thiếu đơn giá. Nguyên nhân là `COPY . .` đưa `config/` vào image lúc build, nên sửa file trên máy rồi `--force-recreate` vẫn đọc bản cũ (hướng dẫn trước đó sai).
+- Sửa: `./config:/app/config:ro` cho api, worker, migrate. Sửa `pricing.yaml` hoặc `classes.yaml` rồi `docker compose up -d --force-recreate api worker` là có hiệu lực, không cần build lại. Vẫn cần restart vì cả hai file được đọc một lần rồi cache (`lru_cache`). Mount chỉ đọc để container không thể sửa cấu hình.
+
+### D-81. Tin chuyển giảng viên: 3 cách diễn đạt mỗi lý do, chọn theo mã ticket
+- Trong một nhóm đông, một câu cố định lặp lại liên tục nghe máy móc. Mỗi lý do (`no_context`, `low_confidence`, `policy`, `error`) có 3 biến thể trong `messages.py`.
+- Biến thể được chọn bằng `ticket_id % 3`, không dùng `random`: các ticket liên tiếp nhận câu khác nhau, còn job bị retry gửi lại đúng câu cũ (giữ idempotent, test được).
+- Câu vẫn là mẫu cố định, không do LLM viết, và không lặp lại câu hỏi của học viên. Test bảo đảm mọi biến thể có mã yêu cầu và chỉ hứa "01 ngày làm việc" (COMMON-01/04), không có mốc thời gian nào khác.
+- Test giá: thay "file giá chỉ được chứa null" bằng "có giá thì bắt buộc có `checked_at`". Giá do người dùng tự kiểm tra là hợp lệ; giá không ghi ngày kiểm tra thì bị coi là chưa xác minh.
+
+### D-82. `docker compose up` tự ingest `data/samples` trong service `migrate`
+- Vấn đề: người khác (HR, người chấm) clone repo về sẽ có DB trống. Nếu quên chạy `ingest_samples.py` thì mọi câu hỏi đều bị chuyển giảng viên (`no_context`), trông như bot hỏng.
+- Chọn: thêm `python scripts/ingest_samples.py` vào cuối lệnh của `migrate`, sau `alembic upgrade head` và `seed`. Chạy mỗi lần `up` vẫn an toàn: nội dung không đổi bị bỏ qua nhờ `content_hash` (D-38), nên chỉ lần đầu, khi file thay đổi hoặc khi đổi model embedding thì mới tốn token. `migrate` chạy xong thì api/worker mới khởi động, nên không có ingest chạy song song.
+- Script trả mã thoát 1 nếu có file bị từ chối hoặc phạm vi index lỗi (vd key embedding sai). Trước đây lỗi chỉ được in ra rồi thoát 0, nên `migrate` sẽ báo thành công với kho rỗng. Giờ `migrate` lỗi thì api/worker không chạy, và `docker compose logs migrate` ghi rõ `INGEST FAILED` (chỉ in loại lỗi, không in nội dung lỗi có thể chứa thông tin nhạy cảm). Phiên bản cũ đang `active` vẫn được giữ.
+- Đánh đổi đã chấp nhận: key sai thì cả stack không lên, thay vì chạy với bot trả lời sai/không trả lời. Ingest qua admin API không đổi.
+- Loại: commit vector/dump DB vào repo (phụ thuộc model, dễ lệch với học liệu, dump chứa log/ticket vận hành); service `ingest` riêng (thêm một service mà lợi ích không đáng kể).
+
+### D-83. Phân quyền khu quản trị: khóa quản trị + khóa giảng viên theo lớp
+- Vấn đề: trước đây mọi giảng viên dùng chung `ADMIN_API_KEY`, nên giảng viên lớp này đọc, trả lời và duyệt FAQ được cho ticket lớp khác, sửa tài liệu lớp khác; `approved_by` là ô tự khai. Bot vẫn cách ly dữ liệu đúng, nhưng con người thì không.
+- Chọn: `INSTRUCTOR_API_KEYS=CLASS=key,...` trong `.env`. Server so khớp khóa trong header `X-Admin-Key` (hằng thời gian, duyệt hết danh sách) và sinh `Principal(role, name, class_id)`. Mọi truy vấn ticket/tài liệu/thống kê của giảng viên bị ghim vào `class_id` của khóa: đối tượng lớp khác trả 404 (không lộ sự tồn tại), xin lọc lớp khác trả 403. Thao tác toàn hệ thống (bật/tắt bot, sự kiện bảo mật, `/demo`, tài liệu tải lên dưới COMMON vì nó nuôi nhiều lớp) chỉ cho quản trị.
+- `approved_by` khi giảng viên duyệt FAQ = tên giảng viên trong `classes.yaml`, bỏ qua giá trị client gửi.
+- Kiểm tra lúc khởi động: mã lớp phải có trong `classes.yaml` (COMMON không có giảng viên), mỗi khóa ≥ 16 ký tự, không trùng nhau, không trùng khóa quản trị. Bật `hide_input_in_errors` cho Settings để khóa sai định dạng không bị in vào log lỗi.
+- Giữ tên header `X-Admin-Key` (= "khóa vào khu quản trị") để client và test cũ không đổi; CLAUDE.md §9 mô tả một khóa, đây là phần mở rộng được người dùng duyệt.
+- Loại: tài khoản + mật khẩu + session (giai đoạn C của đề bài, cần lưu mật khẩu, CSRF, quên mật khẩu…); JWT có claim lớp (thêm thư viện và vòng đời token mà MVP chưa cần). Khi lên SSO chỉ cần thay `require_staff`, phần `Principal` giữ nguyên.
+
+### D-84. Trang `/demo` dạng ứng dụng chat + khung sự kiện webhook
+- Vấn đề: bản cũ là hai khung chat đơn giản; người xem video không thấy rằng mỗi tin là một sự kiện webhook có ký HMAC, và tình huống 6 (trùng) chỉ thử được bằng script.
+- Chọn: bố cục quen thuộc của ứng dụng chat nhóm trên máy tính (thanh điều hướng, danh sách hội thoại, bong bóng tin, trích dẫn tin được trả lời, trạng thái "Đã nhận") để HR dễ hình dung sản phẩm thật. Không dùng logo, tên hay tài nguyên của Zalo; trang ghi rõ "MÔ PHỎNG".
+- Khung "Sự kiện webhook": hiện payload, `X-Timestamp`, phản hồi của webhook và tin bot gửi ra. Chữ ký không bao giờ gửi về trình duyệt. `POST /demo/api/replay` gửi lại đúng sự kiện (1 lần hoặc 2 lần đồng thời) để quay tình huống 6 ngay trên giao diện; "tài khoản bot khác" (`is_bot=true`) để quay chống vòng lặp.
+- Tin học viên gõ trên trang chỉ lưu trong `sessionStorage` của tab; tin của bot luôn đọc lại từ outbox. Không thêm bảng hay API lưu tin học viên chỉ để phục vụ demo.

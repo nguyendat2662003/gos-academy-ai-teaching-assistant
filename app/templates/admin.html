@@ -13,7 +13,7 @@
 {% block content %}
 <section class="card">
   <h2>Lớp & trạng thái bot</h2>
-  <div id="classes" class="row muted">Nhập admin key để tải.</div>
+  <div id="classes" class="row muted">Nhập khóa truy cập (quản trị hoặc giảng viên) để tải.</div>
   <div id="classes-msg" class="msg"></div>
 </section>
 
@@ -39,12 +39,14 @@
     </table>
   </div>
   <p class="muted" id="s-extra"></p>
-  <h2>Sự kiện bảo mật gần đây</h2>
-  <div class="scroll">
-    <table>
-      <thead><tr><th>Thời gian</th><th>Lớp</th><th>Loại</th><th>Chi tiết (đã che)</th><th>User</th></tr></thead>
-      <tbody id="sec-rows"></tbody>
-    </table>
+  <div id="sec-box">
+    <h2>Sự kiện bảo mật gần đây <span class="muted">(chỉ quản trị)</span></h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Thời gian</th><th>Lớp</th><th>Loại</th><th>Chi tiết (đã che)</th><th>User</th></tr></thead>
+        <tbody id="sec-rows"></tbody>
+      </table>
+    </div>
   </div>
 </section>
 
@@ -107,7 +109,9 @@
       box.replaceChildren(...classes.map((c) => h("span", { class: "row" },
         h("strong", {}, c.id), h("span", { class: "muted" }, c.name),
         h("span", { class: "badge " + (c.enabled ? "b-answer" : "b-refusal") }, c.enabled ? "bot đang bật" : "bot đang tắt"),
-        h("button", { class: "secondary", type: "button", onclick: () => toggle(c) }, c.enabled ? "Tắt" : "Bật"))));
+        ME && ME.role === "admin"  // bot on/off is an admin decision (D-83)
+          ? h("button", { class: "secondary", type: "button", onclick: () => toggle(c) }, c.enabled ? "Tắt" : "Bật")
+          : "")));
       say($("classes-msg"), "");
     } catch (e) { say($("classes-msg"), e.message, "err"); }
   }
@@ -172,7 +176,8 @@
     try {
       const resp = await api("/admin/handoffs/" + current.id + "/promote", { method: "POST", json: { question: $("d-faq-q").value } });
       const data = await resp.json();
-      say($("promote-msg"), "Đã tạo FAQ #" + data.faq_entry_id + " cho lớp " + data.class_id + " và index ngay.", "ok");
+      say($("promote-msg"), "Đã tạo FAQ #" + data.faq_entry_id + " cho lớp " + data.class_id + " và index ngay" +
+        (data.approved_by ? " (người duyệt: " + data.approved_by + ")." : "."), "ok");
       $("promote").disabled = true; loadTickets();
     } catch (e) {
       say($("promote-msg"), e.message.includes("missing_answer") ? "Cần lưu câu trả lời trước khi duyệt." : e.message, "err");
@@ -210,6 +215,7 @@
         money(s.ingest.cost_usd) + ". Sự kiện bảo mật: " + s.security_events.total + " (" +
         (Object.entries(s.security_events.by_type).map(([k, n]) => k + ": " + n).join(", ") || "không có") + ").";
       say($("s-msg"), "");
+      if (!ME || ME.role !== "admin") return;
       const ev = await (await api("/admin/security-events?limit=20&" + p)).json();
       $("sec-rows").replaceChildren(...ev.map((e) => h("tr", {}, h("td", {}, new Date(e.created_at).toLocaleString("vi-VN")),
         h("td", {}, e.class_id || "–"), h("td", {}, h("span", { class: "badge b-refusal" }, e.type)),
@@ -220,7 +226,18 @@
   $("reload").addEventListener("click", loadTickets);
   $("f-class").addEventListener("change", loadTickets);
   $("f-status").addEventListener("change", loadTickets);
-  document.addEventListener("keychange", () => { loadClasses(); loadTickets(); loadStats(); });
-  if (store.get()) { loadClasses(); loadTickets(); loadStats(); }
+  // Adapt the page to the role of the key: an instructor is pinned to their own class.
+  async function init() {
+    const me = await whoami();
+    const instructor = me && me.role === "instructor";
+    for (const id of ["f-class", "s-class"]) {
+      $(id).value = instructor ? me.class_id : "";
+      $(id).disabled = !!instructor;
+    }
+    $("sec-box").hidden = !(me && me.role === "admin");
+    if (me) { loadClasses(); loadTickets(); loadStats(); }
+  }
+  document.addEventListener("keychange", init);
+  init();
 </script>
 {% endblock %}

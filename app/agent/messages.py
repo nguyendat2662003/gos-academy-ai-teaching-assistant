@@ -20,20 +20,38 @@ SECRET_WARNING = (
     "Bạn nên thu hồi/đổi khóa đó ngay và đừng dán thông tin bí mật lên nhóm nhé."
 )
 
+# Handoff wordings: several variants per reason so a busy group does not see the same sentence over and over.
+# The variant is picked by ticket id (pick()), so a retried job re-sends exactly the same text. Every variant
+# keeps the same facts: no grounds -> forwarded to the instructor -> "01 ngày làm việc" (COMMON-01, never another
+# promise: COMMON-04) -> ticket code. Placeholders: {ticket}.
 HANDOFF_NO_CONTEXT = (
     "Câu hỏi này mình chưa tìm thấy căn cứ trong tài liệu của lớp nên chưa thể trả lời chính xác. "
-    "Mình đã chuyển tới giảng viên, thầy/cô dự kiến phản hồi trong vòng 01 ngày làm việc. Mã yêu cầu: {ticket}."
+    "Mình đã chuyển tới giảng viên, thầy/cô dự kiến phản hồi trong vòng 01 ngày làm việc. Mã yêu cầu: {ticket}.",
+    "Mình chưa tìm thấy nội dung này trong học liệu của lớp nên chưa thể trả lời chắc chắn. Câu hỏi đã được "
+    "chuyển tới giảng viên, thầy/cô dự kiến phản hồi trong vòng 01 ngày làm việc. Mã yêu cầu: {ticket}.",
+    "Tài liệu của lớp hiện chưa có thông tin để trả lời câu này, nên mình không muốn đoán. Mình đã gửi câu hỏi "
+    "cho giảng viên, thầy/cô dự kiến phản hồi trong vòng 01 ngày làm việc. Mã yêu cầu: {ticket}.",
 )
 
 HANDOFF_POLICY = (
     "Câu hỏi về học phí, ưu đãi, hoàn phí, chứng chỉ hoặc quyền lợi cần bộ phận phụ trách xác nhận, "
     "tài liệu của lớp chưa có thông tin chính thức nên mình không tự trả lời. Mình đã chuyển tới giảng viên/bộ phận "
-    "tư vấn, dự kiến phản hồi trong vòng 01 ngày làm việc. Mã yêu cầu: {ticket}."
+    "tư vấn, dự kiến phản hồi trong vòng 01 ngày làm việc. Mã yêu cầu: {ticket}.",
+    "Các câu hỏi về học phí, ưu đãi, hoàn phí, chứng chỉ hay quyền lợi cần được bộ phận phụ trách xác nhận chính "
+    "thức, nên mình không tự trả lời. Mình đã chuyển tới giảng viên/bộ phận tư vấn, dự kiến phản hồi trong vòng "
+    "01 ngày làm việc. Mã yêu cầu: {ticket}.",
+    "Tài liệu của lớp chưa có thông tin chính thức về học phí, ưu đãi, hoàn phí, chứng chỉ hoặc quyền lợi, nên mình "
+    "xin phép không trả lời để tránh sai lệch. Yêu cầu đã được chuyển tới giảng viên/bộ phận tư vấn, dự kiến phản "
+    "hồi trong vòng 01 ngày làm việc. Mã yêu cầu: {ticket}.",
 )
 
 HANDOFF_LOW_CONFIDENCE = (
     "Mình chưa chắc chắn về câu trả lời dựa trên tài liệu của lớp nên không muốn trả lời sai. "
-    "Mình đã chuyển tới giảng viên, thầy/cô dự kiến phản hồi trong vòng 01 ngày làm việc. Mã yêu cầu: {ticket}."
+    "Mình đã chuyển tới giảng viên, thầy/cô dự kiến phản hồi trong vòng 01 ngày làm việc. Mã yêu cầu: {ticket}.",
+    "Mình tìm được vài nội dung liên quan nhưng chưa đủ căn cứ để trả lời chính xác câu này. Mình đã chuyển tới "
+    "giảng viên, thầy/cô dự kiến phản hồi trong vòng 01 ngày làm việc. Mã yêu cầu: {ticket}.",
+    "Để tránh trả lời sai, mình đã chuyển câu hỏi này tới giảng viên vì tài liệu của lớp chưa đủ rõ để mình xác "
+    "nhận. Thầy/cô dự kiến phản hồi trong vòng 01 ngày làm việc. Mã yêu cầu: {ticket}.",
 )
 
 PARTIAL_NOTE = (
@@ -43,7 +61,11 @@ PARTIAL_NOTE = (
 
 ERROR_FRIENDLY = (
     "Xin lỗi, hệ thống trợ giảng đang gặp sự cố tạm thời nên chưa trả lời được. "
-    "Mình đã chuyển câu hỏi tới giảng viên. Mã yêu cầu: {ticket}."
+    "Mình đã chuyển câu hỏi tới giảng viên. Mã yêu cầu: {ticket}.",
+    "Xin lỗi bạn, trợ giảng đang gặp sự cố tạm thời nên chưa xử lý được câu hỏi này. "
+    "Mình đã chuyển câu hỏi tới giảng viên. Mã yêu cầu: {ticket}.",
+    "Hệ thống trợ giảng vừa gặp sự cố tạm thời nên mình chưa trả lời ngay được. "
+    "Câu hỏi của bạn đã được chuyển tới giảng viên. Mã yêu cầu: {ticket}.",
 )
 
 REFUSED_INJECTION = (
@@ -63,6 +85,11 @@ REFUSED_CROSS_CLASS = (
 
 
 INSTRUCTOR_REPLY = "👩‍🏫 Giảng viên trả lời yêu cầu {ticket}\n❓ {question}\n\n{answer}"
+
+
+def pick(variants: tuple[str, ...], ticket_id: int) -> str:
+    """Deterministic variant by ticket id: consecutive tickets differ, a retried job re-sends the same text."""
+    return variants[ticket_id % len(variants)]
 
 
 def ticket_code(ticket_id: int) -> str:

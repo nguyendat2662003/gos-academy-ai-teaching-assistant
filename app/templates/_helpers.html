@@ -1,0 +1,28 @@
+<script nonce="{{ nonce }}">
+  // Shared helpers for the admin page and the demo. The access key (admin or instructor) lives in
+  // sessionStorage (cleared with the tab), never in the page source.
+  const KEY = "gos_admin_key";
+  const store = { get() { try { return sessionStorage.getItem(KEY) || ""; } catch { return ""; } },
+                  set(v) { try { sessionStorage.setItem(KEY, v); } catch {} } };
+  function h(tag, attrs, ...children) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v === null || v === undefined || v === false) continue;
+      if (k === "class") e.className = v;
+      else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v === true ? "" : v);
+    }
+    for (const c of children.flat()) e.append(c instanceof Node ? c : document.createTextNode(c ?? ""));
+    return e;  // text is always inserted as text nodes: student/LLM content can never become HTML
+  }
+  async function api(path, options = {}) {
+    const headers = Object.assign({ "X-Admin-Key": store.get() }, options.headers || {});
+    if (options.json !== undefined) { headers["Content-Type"] = "application/json"; options.body = JSON.stringify(options.json); }
+    const resp = await fetch(path, Object.assign({}, options, { headers }));
+    if (resp.status === 401) throw new Error("Sai hoặc thiếu khóa truy cập.");
+    if (resp.status === 403) throw new Error("Khóa này không có quyền cho thao tác này.");
+    if (!resp.ok) { let d = ""; try { d = (await resp.json()).detail; } catch {} throw new Error(`HTTP ${resp.status}${d ? ": " + JSON.stringify(d) : ""}`); }
+    return resp;
+  }
+  function say(el, text, kind) { el.textContent = text; el.className = "msg " + (kind || ""); }
+</script>

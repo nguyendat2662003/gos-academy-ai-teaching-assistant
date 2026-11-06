@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 
 from app.api import admin, admin_documents, admin_handoffs, admin_stats, ask, demo, health, pages, webhooks
+from app.api.deps import staff_keys
 from app.core.config import get_settings
 from app.core.logging import new_request_id, request_id_var, setup_logging
 from app.core.redis import get_redis
@@ -19,7 +20,10 @@ logger = logging.getLogger("app")
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     setup_logging(get_settings().log_level)
-    logger.info("api started", extra={"fields": {"app_env": get_settings().app_env}})
+    instructors = len(staff_keys()) - 1  # validates INSTRUCTOR_API_KEYS against classes.yaml: fail fast
+    logger.info(
+        "api started", extra={"fields": {"app_env": get_settings().app_env, "instructor_keys": instructors}}
+    )
     yield
     await get_redis().aclose()
     await get_engine().dispose()

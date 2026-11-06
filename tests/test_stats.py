@@ -42,13 +42,19 @@ def test_pricing_rules() -> None:
     )
 
 
-def test_repo_pricing_file_has_no_invented_prices() -> None:
-    """config/pricing.yaml ships placeholders only: real prices are filled in by hand (CLAUDE.md §11)."""
+def test_repo_pricing_file_prices_are_dated() -> None:
+    """Prices are filled in by hand from the official pages (CLAUDE.md §11), never invented: any real price in
+    config/pricing.yaml requires `checked_at` (the date someone checked the official page)."""
     from app.core.pricing import load_pricing
 
     p = load_pricing("config/pricing.yaml")
     real = {k: v for k, v in p.models.items() if not k.startswith("fake-")}
-    assert real and all(v.input is None and v.output is None for v in real.values())
+    assert real
+    filled = [k for k, v in real.items() if v.input is not None or v.output is not None]
+    if filled:
+        assert p.checked_at, (
+            f"prices filled for {filled} but checked_at is empty: set the date you checked them"
+        )
 
 
 # ------------------------------------------------------------------ /admin/stats == logs

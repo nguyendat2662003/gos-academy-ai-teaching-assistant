@@ -197,3 +197,34 @@ async def test_demo_signs_server_side_and_reads_the_outbox(client, fake_queue, m
     assert [(m["group_id"], m["kind"]) for m in messages] == [(AUTO_GROUP, "handoff")]
     assert messages[0]["reply_to"] == resp.json()["msg_id"]
     assert (await client.get(f"/demo/api/messages?after={messages[0]['id']}", headers=ADMIN)).json() == []
+
+
+async def test_demo_shows_events_replays_them_and_simulates_a_bot(client, fake_queue, monkeypatch) -> None:
+    """D-84: the page shows the event it sent (never the signature), can re-deliver it unchanged (scenario 6,
+    including two copies at the same time) and can post as a bot account (loop protection)."""
+    monkeypatch.setattr(get_settings(), "app_env", "dev")
+    body = {"group_id": GS_GROUP, "user_id": "hv_an", "text": "/hoi Bài tập nộp khi nào?"}
+    sent = (await client.post("/demo/api/send", json=body, headers=ADMIN)).json()
+    event = sent["event"]
+    assert event["event_id"] == sent["event_id"] and event["sender"] == {"id": "hv_an", "is_bot": False}
+    assert "signature" not in str(sent).lower() and "test-webhook-secret" not in str(sent)
+    assert sent["result"]["status"] == "queued" and len(fake_queue.messages) == 1
+
+    again = (await client.post("/demo/api/replay", json={"event": event}, headers=ADMIN)).json()
+    assert [d["result"]["status"] for d in again] == ["duplicate"]
+    fresh = {**event, "event_id": "demo_concurrent_1"}
+    both = (await client.post("/demo/api/replay", json={"event": fresh, "times": 2}, headers=ADMIN)).json()
+    assert sorted(d["result"]["status"] for d in both) == ["duplicate", "queued"]  # concurrent: one wins
+    assert len(fake_queue.messages) == 2
+    bad = await client.post("/demo/api/replay", json={"event": {**event, "group_id": "grp_x"}}, headers=ADMIN)
+    assert bad.status_code == 422
+
+    as_bot = {**body, "user_id": "bot_khac", "is_bot": True}
+    ignored = (await client.post("/demo/api/send", json=as_bot, headers=ADMIN)).json()
+    assert ignored["result"]["status"] == "ignored" and ignored["result"]["reason"] == "from_bot"
+
+    page = (await client.get("/demo")).text
+    assert "MÔ PHỎNG" in page and "/webhooks/mock" in page and '"/hoi"' in page
+    await fake_queue.run_all()
+    rows = (await client.get("/demo/api/messages", headers=ADMIN)).json()
+    assert rows and all(r["created_at"] for r in rows)

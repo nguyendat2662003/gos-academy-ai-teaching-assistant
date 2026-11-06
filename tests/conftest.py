@@ -38,6 +38,7 @@ FAKE_ENV = {
     "REDIS_URL": _ipv4(_test_env.test_redis_url),
     "WEBHOOK_SECRET": "test-webhook-secret",
     "ADMIN_API_KEY": "test-admin-key",
+    "INSTRUCTOR_API_KEYS": "GS-KPI-01=test-gs-instructor-key,AUTO-N8N-01=test-auto-instructor-key",
     "ASK_API_KEY": "test-ask-key",
     "USER_HASH_SALT": "test-salt",
     "LLM_PROVIDER": "fake",

@@ -103,7 +103,7 @@ async def answer_question(
         reason: str, *, top: float | None, detail: dict, error: str | None = None
     ) -> AgentReply:
         ticket = await _ticket(session, request, registry, question, reason, top, detail)
-        text = _HANDOFF_TEXT[reason].format(ticket=messages.ticket_code(ticket))
+        text = messages.pick(_HANDOFF_TEXT[reason], ticket).format(ticket=messages.ticket_code(ticket))
         outcome = Outcome.ERROR if reason == HandoffReason.ERROR else Outcome.HANDOFF
         return _reply(outcome, text, "error" if error else "handoff", secret, usage, reason=reason,
                       ticket=ticket, top=top, error=error)  # fmt: skip

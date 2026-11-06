@@ -1,10 +1,13 @@
 """Ingest the sample material: every supported file in data/samples/<SCOPE>/ (folders starting with "_" are
 skipped). The folder name is the upload scope: a class id, or COMMON for files mixing several scopes.
 
-Uses EMBEDDING_PROVIDER from the environment. Run inside the stack (DB host = "postgres"):
+Uses EMBEDDING_PROVIDER from the environment. Runs automatically in the one-shot `migrate` service on every
+`docker compose up` (unchanged content is skipped by hash, so only the first run embeds; D-82). Manually:
   docker compose exec api python scripts/ingest_samples.py [--include-derived] [--force]
 
-Prints one line per (file, scope), then per-class totals of ACTIVE chunks.
+Prints one line per (file, scope), then per-class totals of ACTIVE chunks. Exit code 1 if any file was refused
+or any scope failed to index (e.g. wrong embedding key), so `migrate` fails loudly instead of starting the bot
+with an empty knowledge base.
 """
 
 import argparse
@@ -38,13 +41,13 @@ def discover(include_derived: bool) -> list[tuple[str, Path]]:
     return files
 
 
-async def main() -> None:
+async def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--include-derived", action="store_true", help="also index data/derived (duplicates!)"
     )
     parser.add_argument("--force", action="store_true", help="re-embed even unchanged content")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     registry = get_registry()
     embedder = get_embedding_provider()
@@ -53,6 +56,7 @@ async def main() -> None:
     total_tokens = 0
     warnings = 0
     flagged = 0
+    failures = 0
     async with get_sessionmaker()() as session:
         for scope, path in discover(args.include_derived):
             try:
@@ -67,6 +71,7 @@ async def main() -> None:
                 )
             except IngestError as exc:
                 print(f"[REFUSED] {path}: {exc}")
+                failures += 1
                 continue
             warnings += len(report.warnings)
             for w in report.warnings:
@@ -74,6 +79,7 @@ async def main() -> None:
             for r in report.results:
                 total_tokens += r.embedding_tokens
                 flagged += r.flagged
+                failures += r.status == "failed"
                 print(
                     f"{r.status:<10} {path.name:<48} -> {r.scope:<12} v{r.version} "
                     f"chunks={r.chunks:<3} flagged={r.flagged} emb_tokens={r.embedding_tokens}"
@@ -91,9 +97,16 @@ async def main() -> None:
         print(f"{'scope':<14}{'documents':>10}{'chunks':>8}")
         for class_id, chunks, docs in rows.all():
             print(f"{class_id:<14}{docs:>10}{chunks:>8}")
-    print(f"\nthis run: embedding_tokens={total_tokens} parser_warnings={warnings} flagged_chunks={flagged}")
+    print(
+        f"\nthis run: embedding_tokens={total_tokens} parser_warnings={warnings} flagged_chunks={flagged} "
+        f"failures={failures}"
+    )
     await get_engine().dispose()
+    if failures:
+        print("INGEST FAILED: check EMBEDDING_PROVIDER / EMBEDDING_MODEL / API key in .env, then re-run")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    sys.exit(asyncio.run(main()))

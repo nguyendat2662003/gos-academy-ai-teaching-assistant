@@ -5,12 +5,15 @@ Bot trả lời bằng tiếng Việt dựa trên học liệu đã duyệt củ
 không đủ căn cứ.
 
 - Đặc tả: [CLAUDE.md](CLAUDE.md) · Đề bài: `docs/de_bai.pdf` (không đưa lên repo; đặt file vào đường dẫn này khi cần)
-- Quyết định kỹ thuật: [docs/DECISIONS.md](docs/DECISIONS.md)
+- Kiến trúc (sơ đồ Mermaid, luồng dữ liệu, cách ly lớp, vai trò & quyền): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Kiểm thử, kết quả 7 tình huống, đánh giá RAG: [docs/TEST_REPORT.md](docs/TEST_REPORT.md)
+  ([SCENARIOS_RESULTS](docs/SCENARIOS_RESULTS.md), [EVAL_RESULTS](docs/EVAL_RESULTS.md))
+- Chi phí vận hành & điều kiện tích hợp Zalo thật: [docs/COST_AND_ZALO.md](docs/COST_AND_ZALO.md)
+- Quyết định kỹ thuật (D-01…D-79): [docs/DECISIONS.md](docs/DECISIONS.md)
 
-> Trạng thái: **Phase 6 (giám sát & chi phí)**: webhook mô phỏng, kho tri thức có versioning, truy xuất hybrid
-> lọc theo lớp, che secret, guard, chính sách, LLM trả JSON có kiểm tra trích dẫn, ngữ cảnh hội thoại,
-> retry/timeout, `/api/ask`, ticket + duyệt FAQ, `/admin/ui`, `/demo`, `/admin/stats` (token, latency, chi phí),
-> `/admin/security-events`. Đánh giá & tài liệu ở Phase 7.
+> Trạng thái: **hoàn thành MVP (Phase 0–7)**. 227 test offline xanh; trên stack thật với OpenAI: 7/7 tình
+> huống đạt, đánh giá 40 câu golden quyết định đúng 40/40, rò rỉ chéo lớp 0. Tích hợp Zalo thật mới ở mức khung
+> (cần quyền OA + GMF).
 
 ## Bot xử lý một câu hỏi thế nào
 
@@ -50,7 +53,10 @@ curl http://127.0.0.1:8000/health
 # {"status":"ok","checks":{"db":"ok","redis":"ok"}}
 ```
 
-Migration và đồng bộ `config/classes.yaml` chạy tự động bởi service one-shot `migrate`.
+Service one-shot `migrate` tự chạy mỗi lần `up`: migration, đồng bộ `config/classes.yaml`, rồi **ingest
+`data/samples`** (D-82). Nội dung không đổi được bỏ qua theo hash, nên chỉ lần đầu mới gọi API embedding. Nếu ingest
+lỗi (thường do key/model embedding sai trong `.env`) thì `migrate` thoát với lỗi và api/worker không khởi động:
+xem `docker compose logs migrate`, sửa `.env` rồi `docker compose up -d`.
 Chạy lại thủ công nếu cần:
 
 ```powershell
@@ -58,6 +64,7 @@ docker compose run --rm migrate
 # hoặc từng bước:
 docker compose exec api alembic upgrade head
 docker compose exec api python -m app.db.seed
+docker compose exec api python scripts/ingest_samples.py
 ```
 
 ## Kho tri thức
@@ -75,10 +82,12 @@ EMBEDDING_DIM=768               # giữ 768: model được gọi với dimensio
 OPENAI_API_KEY=...
 ```
 
-Sau khi sửa `.env`: `docker compose up -d` (container đọc lại biến môi trường) rồi ingest lại. Đổi model embedding
-thì mọi tài liệu tự được embed lại (D-38).
+Sau khi sửa `.env`: `docker compose up -d` (container đọc lại biến môi trường; `migrate` tự ingest lại). Đổi model
+embedding thì mọi tài liệu tự được embed lại (D-38).
 
 ### Ingest học liệu mẫu
+
+`docker compose up` đã tự ingest (xem trên). Chạy tay khi cần:
 
 ```powershell
 docker compose exec api python scripts/ingest_samples.py          # data/samples/<SCOPE>/*
@@ -158,7 +167,7 @@ curl.exe -X POST http://127.0.0.1:8000/admin/classes/AUTO-N8N-01/toggle `
 
 ## Giảng viên: ticket & FAQ
 
-Trang **http://127.0.0.1:8000/admin/ui** → nhập `ADMIN_API_KEY` (lưu trong sessionStorage của tab, không nằm
+Trang **http://127.0.0.1:8000/admin/ui** → nhập khóa truy cập (lưu trong sessionStorage của tab, không nằm
 trong mã trang) → lọc ticket theo lớp/trạng thái → chọn ticket → nhập câu trả lời → tick "Gửi câu trả lời vào
 nhóm" → **Lưu** → **Duyệt vào FAQ của lớp** (có thể viết lại câu hỏi cho tổng quát). FAQ được index ngay, chỉ
 cho lớp của ticket; câu hỏi tương tự lần sau bot trả lời với nguồn `FAQ đã duyệt (FAQ giảng viên #N)`.
@@ -174,13 +183,43 @@ cho lớp của ticket; câu hỏi tương tự lần sau bot trả lời với 
 
 Ticket tạo từ `/api/ask` không có nhóm chat nên không gửi vào nhóm được (`409`).
 
-## Demo 2 nhóm chat (quay video)
+### Khóa giảng viên theo lớp (D-83)
 
-Chỉ bật khi `APP_ENV=dev`. Mở **http://127.0.0.1:8000/demo** → nhập `ADMIN_API_KEY` → mỗi khung là một nhóm
-trong `classes.yaml`; bấm câu hỏi mẫu hoặc tự gõ (`Enter` để gửi). Server tự ký HMAC rồi gọi đúng
-`/webhooks/mock` (trình duyệt không thấy `WEBHOOK_SECRET`); dưới mỗi tin hiện kết quả webhook (`queued`,
-`ignored (no_trigger)`, `duplicate`, `rate_limited`). Câu trả lời đọc lại từ outbox mỗi 1,5 giây, kể cả tin
-giảng viên gửi từ trang admin. Cần worker đang chạy.
+Mỗi lớp có một khóa riêng cho giảng viên, khai trong `.env` (mỗi khóa ≥ 16 ký tự, khác nhau và khác
+`ADMIN_API_KEY`; sinh bằng `python -c "import secrets;print(secrets.token_urlsafe(24))"`):
+
+```
+INSTRUCTOR_API_KEYS=GS-KPI-01=<khóa GS>,AUTO-N8N-01=<khóa AUTO>
+```
+
+Rồi `docker compose up -d` (api đọc lại `.env`; sai mã lớp thì api không khởi động). Nhập khóa giảng viên vào cùng ô
+"Khóa truy cập" của `/admin/ui`: trang hiện "Giảng viên · GS-KPI-01", chỉ còn ticket, tài liệu, thống kê của lớp đó.
+`GET /admin/me` cho biết khóa đang dùng thuộc vai trò nào. Bảng quyền đầy đủ: [docs/ARCHITECTURE.md §4](docs/ARCHITECTURE.md).
+
+| Thao tác | Quản trị | Giảng viên |
+|---|---|---|
+| Ticket, trả lời, gửi nhóm, duyệt FAQ | mọi lớp | lớp mình (lớp khác → 404) |
+| Tài liệu: xem | mọi lớp | lớp mình + COMMON |
+| Tài liệu: tải lên / xóa / đánh lại chỉ mục | mọi lớp | chỉ tài liệu riêng của lớp mình |
+| Thống kê `/admin/stats` | mọi lớp | lớp mình |
+| Bật/tắt bot, sự kiện bảo mật, `/demo` | ✓ | 403 |
+
+## Demo nhóm chat (quay video)
+
+Chỉ bật khi `APP_ENV=dev`. Mở **http://127.0.0.1:8000/demo** → nhập `ADMIN_API_KEY` (khóa giảng viên không mở
+được demo). Giao diện mô phỏng một ứng dụng chat nhóm (D-84), ghi rõ là **mô phỏng**:
+
+- **Danh sách hội thoại** bên trái: mỗi nhóm trong `classes.yaml` là một hội thoại, có tin cuối và số tin chưa đọc.
+- **Khung chat**: bong bóng tin, tin của bot trích dẫn tin được trả lời, phần `📚 Nguồn` tách riêng, nhãn loại
+  phản hồi (trả lời có nguồn / chuyển giảng viên / từ chối…), trạng thái "Đã nhận" hoặc lý do bot bỏ qua.
+  "Gửi với tư cách" chọn học viên An/Bình/Chi, hoặc *một tài khoản bot khác* để thấy bot không trả lời bot.
+  Nút **Câu hỏi mẫu** chứa câu cho 7 tình huống.
+- **Khung "Sự kiện webhook"** bên phải: mỗi tin là một `POST /webhooks/mock` với header `X-Timestamp`, payload
+  JSON và phản hồi (`queued`, `ignored · no_trigger`, `duplicate`, `rate_limited`…); chữ ký HMAC do server tạo và
+  không bao giờ hiện ra. Mỗi sự kiện có nút **Gửi lại y hệt** và **Gửi 2 lần đồng thời** (tình huống 6: luôn chỉ
+  một lần được xử lý). Tin bot gửi ra (`adapter.send_reply` → outbox) cũng hiện ở đây.
+
+Câu trả lời đọc lại từ outbox mỗi 1,5 giây, kể cả tin giảng viên gửi từ trang admin. Cần worker đang chạy.
 
 Kịch bản gợi ý: hỏi cùng "Bài tập nộp khi nào?" ở 2 nhóm → hỏi câu ngoài giáo trình → sang `/admin/ui` trả lời +
 gửi nhóm + duyệt FAQ → hỏi lại câu đó ở nhóm cũ (trả lời từ FAQ) và ở nhóm kia (vẫn chuyển giảng viên).
@@ -203,6 +242,21 @@ curl.exe -H "X-Admin-Key: <ADMIN_API_KEY>" "http://127.0.0.1:8000/admin/security
   `pricing.models_missing_price` liệt kê model chưa có giá. Điền đơn giá (USD / 1 triệu token) từ trang giá chính
   thức, đặt `checked_at`, rồi `docker compose up -d --force-recreate api worker`.
 
+## Đánh giá & kịch bản (stack thật)
+
+```powershell
+# 7 tình huống bắt buộc qua webhook thật → bảng kết quả (exit code 1 nếu có kiểm tra không đạt)
+docker compose exec api python scripts/run_scenarios.py --out /tmp/scn.md
+
+# đánh giá RAG trên data/eval/golden.yaml: hit@k, MRR, rò rỉ chéo lớp, quét ngưỡng
+docker compose exec api python scripts/eval_rag.py
+# + pipeline đầy đủ với LLM thật (chạy trong 1 transaction rồi rollback: không để lại ticket/log)
+docker compose exec api python scripts/eval_rag.py --full --min-score 0.35 --out /tmp/eval.md
+docker compose cp api:/tmp/eval.md docs/EVAL_RESULTS.md
+```
+
+`RETRIEVAL_MIN_SCORE=0.35` được hiệu chỉnh bằng lệnh trên (D-74). Đổi học liệu hoặc model embedding thì chạy lại.
+
 ## Chạy test
 
 Test chạy offline (provider `fake`), dùng DB riêng `gos_test`, được tạo lại mỗi lần chạy (không đụng DB chính).
@@ -220,7 +274,7 @@ docker compose up -d postgres redis
 ```
 app/core/      config (env), logging JSON, security helpers, classes registry, redis, pricing (pricing.yaml)
 app/db/        models SQLAlchemy, session, seed classes.yaml, stats (tổng hợp cho /admin/stats)
-app/api/       routers: /health, /webhooks/{mock,zalo}, /api/ask, /admin/{classes,documents,handoffs,stats,security-events}, /admin/ui, /demo
+app/api/       routers: /health, /webhooks/{mock,zalo}, /api/ask, /admin/{me,classes,documents,handoffs,stats,security-events}, /admin/ui, /demo
 app/channels/  ChannelAdapter, MockWebhookAdapter (HMAC + outbox), ZaloGMFAdapter (stub), ingress (dedupe → lọc → rate limit → enqueue)
 app/agent/     pipeline (điều phối), guard, policy, prompts, verify, sources, conversation, handoff, messages
 app/ingestion/ parsers (DOCX/PDF/XLSX), chunker, luật flag injection, indexer (phân lớp, versioning), faq (duyệt ticket → FAQ)
@@ -228,12 +282,14 @@ app/templates/ Jinja2: base, admin, demo (CSP nonce, dữ liệu chèn bằng te
 app/providers/ embedding + LLM: openai, gemini, fake; retry (timeout + backoff)
 app/retrieval/  hybrid_search (vector + full-text IDF, RRF) — bắt buộc class_id
 app/workers/   arq worker: process_message, send_notice
-scripts/       send_mock_event, ingest_samples, preview_chunks, derive_samples
+scripts/       send_mock_event, ingest_samples, preview_chunks, derive_samples, run_scenarios, eval_rag
 alembic/       migration 0001 (extension vector + toàn bộ bảng), 0002 (documents: origin_scope, storage_path), 0003 (model embedding + token FAQ)
 config/        classes.yaml (lớp ↔ nhóm chat ↔ tiền tố mã mục), pricing.yaml (đơn giá token — tự điền)
 data/samples/  học liệu mẫu theo lớp (KHÔNG sửa); _meta/ = tài liệu hướng dẫn + tin nhắn mô phỏng (không ingest)
 data/derived/  bản PDF/XLSX chuyển từ samples (không đổi nội dung, không ingest mặc định)
-tests/         pytest
+data/eval/     golden.yaml (40 câu đánh giá: lớp, kỳ vọng, mục chứa đáp án)
+docs/          ARCHITECTURE, TEST_REPORT, COST_AND_ZALO, DECISIONS, kết quả chạy thật (SCENARIOS/EVAL_RESULTS)
+tests/         pytest (gồm test_security_audit: kiểm chứng 4 ràng buộc cứng)
 ```
 
 ## Lớp học

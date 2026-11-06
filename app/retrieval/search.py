@@ -94,7 +94,7 @@ def _base_query(scopes: list[str], *columns) -> Select:  # type: ignore[no-untyp
 
 
 def query_terms(question: str) -> list[str]:
-    """Distinct lower-cased word terms minus stopwords. Only \w characters: safe inside to_tsquery."""
+    """Distinct lower-cased word terms minus stopwords. Only regex \\w characters: safe in to_tsquery."""
     terms = [t for t in _TERM_RE.findall(question.lower()) if t not in _STOPWORDS and len(t) > 1]
     return list(dict.fromkeys(terms))[:20]
 
