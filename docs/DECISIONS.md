@@ -408,7 +408,7 @@ Cosine top-1 đo được trên 14 câu thật (8 tin mẫu HR + các tình hu�
 - Trong một nhóm đông, một câu cố định lặp lại liên tục nghe máy móc. Mỗi lý do (`no_context`, `low_confidence`, `policy`, `error`) có 3 biến thể trong `messages.py`.
 - Biến thể được chọn bằng `ticket_id % 3`, không dùng `random`: các ticket liên tiếp nhận câu khác nhau, còn job bị retry gửi lại đúng câu cũ (giữ idempotent, test được).
 - Câu vẫn là mẫu cố định, không do LLM viết, và không lặp lại câu hỏi của học viên. Test bảo đảm mọi biến thể có mã yêu cầu và chỉ hứa "01 ngày làm việc" (COMMON-01/04), không có mốc thời gian nào khác.
-- Test giá: thay "file giá chỉ được chứa null" bằng "có giá thì bắt buộc có `checked_at`". Giá do người dùng tự kiểm tra là hợp lệ; giá không ghi ngày kiểm tra thì bị coi là chưa xác minh.
+- Test giá: bỏ test "file giá chỉ được chứa null", vì giá do người dùng tự điền từ trang chính thức là hợp lệ. (Ràng buộc "có giá thì bắt buộc `checked_at`" từng thêm ở đây đã bỏ, xem D-85.)
 
 ### D-82. `docker compose up` tự ingest `data/samples` trong service `migrate`
 - Vấn đề: người khác (HR, người chấm) clone repo về sẽ có DB trống. Nếu quên chạy `ingest_samples.py` thì mọi câu hỏi đều bị chuyển giảng viên (`no_context`), trông như bot hỏng.
@@ -430,3 +430,8 @@ Cosine top-1 đo được trên 14 câu thật (8 tin mẫu HR + các tình hu�
 - Chọn: bố cục quen thuộc của ứng dụng chat nhóm trên máy tính (thanh điều hướng, danh sách hội thoại, bong bóng tin, trích dẫn tin được trả lời, trạng thái "Đã nhận") để HR dễ hình dung sản phẩm thật. Không dùng logo, tên hay tài nguyên của Zalo; trang ghi rõ "MÔ PHỎNG".
 - Khung "Sự kiện webhook": hiện payload, `X-Timestamp`, phản hồi của webhook và tin bot gửi ra. Chữ ký không bao giờ gửi về trình duyệt. `POST /demo/api/replay` gửi lại đúng sự kiện (1 lần hoặc 2 lần đồng thời) để quay tình huống 6 ngay trên giao diện; "tài khoản bot khác" (`is_bot=true`) để quay chống vòng lặp.
 - Tin học viên gõ trên trang chỉ lưu trong `sessionStorage` của tab; tin của bot luôn đọc lại từ outbox. Không thêm bảng hay API lưu tin học viên chỉ để phục vụ demo.
+
+### D-85. `checked_at` trong `pricing.yaml` là tùy chọn
+- Đơn giá OpenAI của các model đã chọn do người dùng điền tay từ trang giá chính thức (CLAUDE.md §11). Ngày kiểm tra không ảnh hưởng đến cách tính chi phí, nên không bắt buộc.
+- Bỏ test bắt buộc `checked_at`. Trường vẫn còn: nếu điền thì trang admin hiển thị cạnh dòng chi phí; để trống thì không hiển thị gì.
+- Không đổi: giá không bao giờ hardcode trong code; model chưa có giá thì `cost_usd = null`, không tính 0.

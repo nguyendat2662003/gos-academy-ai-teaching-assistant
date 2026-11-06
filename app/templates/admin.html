@@ -209,8 +209,8 @@
       $("s-rows").replaceChildren(statsRow("Tổng", s.total),
         ...s.by_class.map((r) => statsRow("Lớp " + r.class_id, r)), ...s.by_day.map((r) => statsRow("Ngày " + r.day, r)));
       const pr = s.pricing;
-      $("s-pricing").textContent = "Chi phí = token thực tế × đơn giá trong config/pricing.yaml (kiểm tra: " +
-        (pr.checked_at || "chưa điền") + ")" + (pr.cost_complete ? "." : ". Chưa có đơn giá cho: " + pr.models_missing_price.join(", "));
+      $("s-pricing").textContent = "Chi phí = token thực tế × đơn giá trong config/pricing.yaml" +
+        (pr.checked_at ? " (kiểm tra: " + pr.checked_at + ")" : "") + (pr.cost_complete ? "." : ". Chưa có đơn giá cho: " + pr.models_missing_price.join(", "));
       $("s-extra").textContent = "Ingest (embedding tài liệu + FAQ): " + s.ingest.embedding_tokens + " token, " +
         money(s.ingest.cost_usd) + ". Sự kiện bảo mật: " + s.security_events.total + " (" +
         (Object.entries(s.security_events.by_type).map(([k, n]) => k + ": " + n).join(", ") || "không có") + ").";

@@ -11,7 +11,7 @@ không đủ căn cứ.
 - Chi phí vận hành & điều kiện tích hợp Zalo thật: [docs/COST_AND_ZALO.md](docs/COST_AND_ZALO.md)
 - Quyết định kỹ thuật (D-01…D-79): [docs/DECISIONS.md](docs/DECISIONS.md)
 
-> Trạng thái: **hoàn thành MVP (Phase 0–7)**. 227 test offline xanh; trên stack thật với OpenAI: 7/7 tình
+> Trạng thái: **hoàn thành MVP (Phase 0–7)**. 226 test offline xanh; trên stack thật với OpenAI: 7/7 tình
 > huống đạt, đánh giá 40 câu golden quyết định đúng 40/40, rò rỉ chéo lớp 0. Tích hợp Zalo thật mới ở mức khung
 > (cần quyền OA + GMF).
 
@@ -240,7 +240,7 @@ curl.exe -H "X-Admin-Key: <ADMIN_API_KEY>" "http://127.0.0.1:8000/admin/security
 - **Chi phí = token thực tế × đơn giá trong [config/pricing.yaml](config/pricing.yaml)**, tính lúc xem, nên điền giá
   sau vẫn ra chi phí của lịch sử. Repo chỉ có placeholder `null` → `cost_usd: null` và
   `pricing.models_missing_price` liệt kê model chưa có giá. Điền đơn giá (USD / 1 triệu token) từ trang giá chính
-  thức, đặt `checked_at`, rồi `docker compose up -d --force-recreate api worker`.
+  thức (`checked_at` tùy chọn), rồi `docker compose up -d --force-recreate api worker`.
 
 ## Đánh giá & kịch bản (stack thật)
 

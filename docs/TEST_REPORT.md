@@ -5,7 +5,7 @@ LLM thật: OpenAI `gpt-6-luna` · embedding thật: `text-embedding-3-small` (7
 
 | Loại | Lệnh | Kết quả |
 |---|---|---|
-| Test offline (provider `fake`, embedding tất định) | `pytest` | **227 passed** (sau khi điền `checked_at` trong pricing.yaml) |
+| Test offline (provider `fake`, embedding tất định) | `pytest` | **226 passed** |
 | Lint | `ruff check .` + `ruff format --check .` | sạch |
 | 7 tình huống trên stack thật (webhook → worker → LLM) | `docker compose exec api python scripts/run_scenarios.py` | **7/7 đạt** → [SCENARIOS_RESULTS.md](SCENARIOS_RESULTS.md) |
 | Đánh giá RAG, 40 câu golden | `docker compose exec api python scripts/eval_rag.py --full` | quyết định đúng **40/40**, hit@5 **100%**, rò rỉ chéo lớp **0** → [EVAL_RESULTS.md](EVAL_RESULTS.md) |
@@ -89,7 +89,7 @@ Phần lớn thời gian là chờ LLM. Phần đồng bộ của webhook luôn 
 - Bộ golden có 40 câu, viết dựa trên học liệu mẫu nhỏ (32 chunk). Khi có giáo trình thật cần mở rộng bộ câu hỏi và hiệu chỉnh lại ngưỡng.
 - Câu hỏi đếm/liệt kê trên toàn bộ giáo trình vẫn có thể chưa đầy đủ (do giới hạn top-k), nhưng bot nói rõ và tạo ticket (D-68).
 - Provider Gemini đã viết nhưng chưa chạy với key thật.
-- Chi phí chỉ là **ước tính** từ đơn giá điền tay trong `config/pricing.yaml` (phải ghi `checked_at` = ngày đối chiếu trang giá chính thức); model nào chưa có giá thì chi phí hiển thị `null`, không bao giờ tính 0.
+- Chi phí chỉ là **ước tính** từ đơn giá điền tay trong `config/pricing.yaml` (lấy từ trang giá chính thức; `checked_at` tùy chọn); model nào chưa có giá thì chi phí hiển thị `null`, không bao giờ tính 0.
 - Tích hợp Zalo thật chưa làm; cần quyền OA + GMF và xác minh tài liệu chính thức ([COST_AND_ZALO.md](COST_AND_ZALO.md)).
 
 ## 7. Tự chạy lại
