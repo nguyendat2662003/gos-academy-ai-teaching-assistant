@@ -1,4 +1,4 @@
-"""Instructor handoff tickets (CLAUDE.md §10). Creation is idempotent per request_id (job retries)."""
+"""Instructor handoff tickets. Creation is idempotent per request_id (job retries)."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

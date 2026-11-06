@@ -1,4 +1,4 @@
-"""POST /api/ask — direct question/answer for trusted server-to-server callers (X-API-Key, CLAUDE.md §9).
+"""POST /api/ask — direct question/answer for trusted server-to-server callers (X-API-Key).
 
 The caller is trusted to have authenticated the student and to pass the right class_id. Same pipeline,
 same redaction and guard as the chat channel; nothing is posted to a group.

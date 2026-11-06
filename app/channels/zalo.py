@@ -16,7 +16,8 @@ Technical side (to confirm on developers.zalo.me):
 - The endpoint, payload, rate limits and error codes for sending a message to a group → `send_reply`.
 - Platform policies on bots in groups (allowed triggers, message frequency, content rules).
 
-Personal accounts and unofficial/reverse-engineered libraries must never be used (CLAUDE.md §1.4).
+Personal accounts and unofficial/reverse-engineered libraries must never be used
+(hard constraint 4, docs/TEST_REPORT.md §2).
 """
 
 from fastapi import Request

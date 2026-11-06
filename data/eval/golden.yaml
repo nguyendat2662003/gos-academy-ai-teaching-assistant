@@ -1,4 +1,4 @@
-# Evaluation set for scripts/eval_rag.py (CLAUDE.md §13).
+# Evaluation set for scripts/eval_rag.py.
 #
 # These are evaluation QUESTIONS written against the HR sample material; the material itself is untouched.
 #   expect:   answer | partial | handoff | refused   (what the bot should do)

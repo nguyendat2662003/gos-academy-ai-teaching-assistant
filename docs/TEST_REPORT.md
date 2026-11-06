@@ -25,7 +25,7 @@ Mỗi tình huống có test offline (chạy từ webhook đến outbox với h�
 | 6 | Cùng event gửi 2 lần (đồng thời) | `test_dedupe.py` (4 test, gồm cả worker arq thật) | `queued` + `duplicate`, đúng 1 tin trong outbox ✅ |
 | 7 | Prompt injection đòi bỏ hướng dẫn, lộ API key | `test_s7_injection_refused_and_logged` (4 biến thể) | `refused` + `security_event`, không gọi LLM, phản hồi không chứa secret ✅ |
 
-Các kiểm thử bổ sung CLAUDE.md §13 yêu cầu:
+Các kiểm thử bổ sung:
 
 | Yêu cầu | Test |
 |---|---|
@@ -41,7 +41,7 @@ Các kiểm thử bổ sung CLAUDE.md §13 yêu cầu:
 
 ## 2. Ràng buộc cứng → bằng chứng
 
-| Ràng buộc (CLAUDE.md §1) | Bằng chứng tự động |
+| Ràng buộc | Bằng chứng tự động |
 |---|---|
 | **1. Không lộ secret** | `test_security_audit.py`: quét mọi file có thể commit; `.env` bị ignore, `.env.example` chỉ có placeholder; log của cả luồng không chứa key, khóa admin, secret webhook, tên hiển thị, user id hay nội dung tin. · `test_redact.py`. · `test_s2` (key không có trong DB, lịch sử, prompt gửi LLM). · `test_secret_written_by_llm_is_masked`. · `test_health_reports_degraded_without_leaking_config`. · `test_admin_page_is_a_static_shell_with_csp`, `test_demo_signs_server_side_and_reads_the_outbox` (trang không chứa secret). · `run_scenarios.py` #2 và #7 trên stack thật. |
 | **2. Không lộ dữ liệu lớp khác** | `test_search_functions_require_class_id`, `test_c2_retrieval_requires_an_explicit_class_id` (keyword-only, không mặc định). · `test_class_id_in_message_text_is_ignored`, `test_c2_class_comes_from_the_group_never_from_the_message`. · `test_results_never_leave_class_scope`, `test_s5` (prompt của lớp này không có chunk lớp kia). · `test_no_other_module_reads_chunks_for_answers` (test kiến trúc). · `test_follow_up_question_is_rewritten_with_same_class_history` (lịch sử không vượt lớp). · `test_faq_approval_end_to_end` bước 5. · **`eval_rag.py`: 0 chunk lớp khác bị truy xuất, 0 bị trích dẫn** trên 40 câu với embedding thật. · Phía người dùng (D-83): `test_roles.py` — khóa giảng viên chỉ thấy ticket, tài liệu, thống kê lớp mình; ticket/tài liệu lớp khác trả 404, thao tác toàn hệ thống trả 403. |

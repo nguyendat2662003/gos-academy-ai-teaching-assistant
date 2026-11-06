@@ -1,4 +1,4 @@
-"""Instructor-approved FAQ entries (CLAUDE.md §10): promote a ticket's answer and index it at once.
+"""Instructor-approved FAQ entries: promote a ticket's answer and index it at once.
 
 The entry always belongs to the ticket's class (decided server-side when the ticket was created from the
 group_id), never to a class chosen by the caller. Embedding happens before any write, so a provider error

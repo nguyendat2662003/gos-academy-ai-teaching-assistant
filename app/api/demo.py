@@ -1,4 +1,4 @@
-"""Dev-only demo: a chat-app style page with the two simulated class groups (CLAUDE.md §9, §12; D-84).
+"""Dev-only demo: a chat-app style page with the two simulated class groups (D-84).
 
 Enabled only when APP_ENV=dev, and its APIs require the admin key (an instructor key gets 403). The browser
 never sees WEBHOOK_SECRET: the server builds the mock event, signs it, and posts it to its own /webhooks/mock

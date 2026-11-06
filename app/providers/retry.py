@@ -1,4 +1,4 @@
-"""Timeout + retry with exponential backoff around one LLM call (CLAUDE.md §5 step 16).
+"""Timeout + retry with exponential backoff around one LLM call.
 
 Only TransientLLMError (429 / 5xx / timeout / connection) is retried, at most `max_retries` times, with delays
 base, 2·base, 4·base … plus a little jitter. Provider SDK retries are disabled so this is the single policy.

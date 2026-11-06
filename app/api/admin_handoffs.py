@@ -1,5 +1,5 @@
 """Admin API for instructor handoff tickets: list, answer (optionally post to the group), promote to FAQ,
-export CSV (X-Admin-Key). CLAUDE.md §10.
+export CSV (X-Admin-Key).
 
 Roles (D-83): an instructor key sees and handles only its own class's tickets (another class's ticket answers
 404); FAQ entries it approves record the instructor's name from classes.yaml, not a name typed by the client.

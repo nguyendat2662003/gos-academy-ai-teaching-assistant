@@ -1,4 +1,4 @@
-"""Secret redaction (CLAUDE.md §9). Applied before anything is stored, logged, queued or sent to an LLM.
+"""Secret redaction. Applied before anything is stored, logged, queued or sent to an LLM.
 
 Idempotent: redacting already-redacted text changes nothing.
 """

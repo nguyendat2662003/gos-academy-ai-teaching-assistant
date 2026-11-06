@@ -1,4 +1,4 @@
-"""Run the 7 mandatory scenarios (CLAUDE.md §13) against the running stack and print a Markdown table.
+"""Run the 7 mandatory scenarios (TEST_REPORT §1) against the running stack and print a Markdown table.
 
   docker compose exec api python scripts/run_scenarios.py [--out docs/SCENARIOS_LATEST.md]
 

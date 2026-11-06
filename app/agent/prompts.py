@@ -1,4 +1,4 @@
-"""Prompts sent to the LLM (CLAUDE.md §8). Student-facing wording lives in messages.py, not here.
+"""Prompts sent to the LLM. Student-facing wording lives in messages.py, not here.
 
 Everything coming from documents, conversation history or the student is wrapped in tags and HTML-escaped,
 so it can never close a tag and pose as an instruction (DECISIONS D-50).
@@ -63,7 +63,7 @@ thêm thông tin mới.
 
 
 class LLMAnswer(BaseModel):
-    """Validated LLM output (CLAUDE.md §8). Output that does not parse is a low-confidence handoff."""
+    """Validated LLM output. Output that does not parse is a low-confidence handoff."""
 
     answerable: bool
     answer: str = ""

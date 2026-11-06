@@ -34,3 +34,7 @@ docs/de_bai.pdf
 
 # Office lock files (created while a document is open in Word/Excel)
 ~$*
+
+# Local working notes: kept on this machine, not published
+CLAUDE.md
+PROMPTS.md

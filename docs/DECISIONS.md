@@ -7,7 +7,7 @@ Mỗi mục: **Bối cảnh → Quyết định → Phương án loại → Lý 
 ## Phase 0 — Khảo sát học liệu & đề bài
 
 ### D-01. Kho dùng chung `COMMON` bên cạnh kho từng lớp
-- **Bối cảnh:** Học liệu (`00_Huong_dan...`, M-02) yêu cầu "FAQ chung được truy xuất cho cả hai lớp". CLAUDE.md lại quy định mỗi tài liệu gắn đúng một lớp.
+- **Bối cảnh:** Học liệu (`00_Huong_dan...`, M-02) yêu cầu "FAQ chung được truy xuất cho cả hai lớp". Thiết kế ban đầu lại quy định mỗi tài liệu gắn đúng một lớp.
 - **Quyết định:** Thêm phạm vi `COMMON` (một dòng trong bảng `classes` với `is_shared = true`, không có nhóm chat). Truy xuất luôn lọc `class_id IN (:class_id, 'COMMON')`. `class_id` vẫn là tham số bắt buộc, vẫn suy ra từ `group_id`.
 - **Phương án loại:** (a) Copy chunk COMMON vào từng lớp: dữ liệu trùng, cập nhật dễ lệch nhau. (b) Bỏ COMMON, gán FAQ chung cho một lớp: sai yêu cầu đề.
 - **Lý do:** Vẫn đảm bảo không lớp nào thấy dữ liệu chuyên môn của lớp khác. COMMON chỉ chứa quy định chung, đã được đánh dấu rõ trong tài liệu nguồn.
@@ -57,7 +57,7 @@ Mỗi mục: **Bối cảnh → Quyết định → Phương án loại → Lý 
 
 ## Phase 1 — Nền tảng
 
-### D-12. Thư viện bổ sung ngoài danh sách CLAUDE.md
+### D-12. Thư viện bổ sung ngoài tech stack ban đầu
 Mỗi thư viện là phụ thuộc trực tiếp của một thành phần đã chọn:
 
 | Thư viện | Lý do |
@@ -119,7 +119,7 @@ Mỗi thư viện là phụ thuộc trực tiếp của một thành phần đã
 - Thông báo được gửi qua job `send_notice` (bất đồng bộ), không gửi ngay trong request webhook, để khi dùng Zalo thật thì lệnh gọi API gửi tin không làm chậm webhook.
 
 ### D-25. Mở rộng `ChannelAdapter.send_reply` thêm `event_id` và `kind` (keyword-only, tùy chọn)
-- Mục đích là idempotency khi gửi: adapter tự đảm bảo mỗi event chỉ gửi tối đa 1 tin. Chữ ký gốc ở CLAUDE.md vẫn tương thích.
+- Mục đích là idempotency khi gửi: adapter tự đảm bảo mỗi event chỉ gửi tối đa 1 tin. Chữ ký interface ban đầu vẫn tương thích.
 
 ### D-26. `POST /admin/classes/{id}/toggle` nhận body `{"enabled": bool}` thay vì đảo trạng thái
 - Gọi lặp lại cho cùng kết quả (idempotent), không bị đảo ngược ngoài ý muốn khi client retry. Không cho bật/tắt `COMMON` (trả 404).
@@ -222,7 +222,7 @@ Mỗi thư viện là phụ thuộc trực tiếp của một thành phần đã
 - Bộ lọc `class_id IN (lớp, COMMON)` và điều kiện "tài liệu `active` hoặc FAQ `active`" nằm trong cùng một `_base_query`, dùng chung cho nhánh vector, nhánh full-text và bước đếm IDF.
 - Có test cấu trúc: mọi coroutine public trong `app.retrieval.search` đều phải có `class_id` dạng keyword bắt buộc; chỉ 3 module được phép tham chiếu `Chunk` (search, indexer, admin_documents).
 - pgvector 0.8: dùng `SET LOCAL hnsw.iterative_scan = relaxed_order` để HNSW quét tiếp khi bộ lọc `WHERE` loại bớt hàng, nhờ đó vẫn trả đủ k kết quả.
-- Điểm dùng cho ngưỡng = cosine của kết quả vector tốt nhất (CLAUDE.md §7). RRF với k = 60.
+- Điểm dùng cho ngưỡng = cosine của kết quả vector tốt nhất. RRF với k = 60.
 
 ### D-49. Full-text: OR các từ trong câu hỏi, chấm điểm bằng tổng IDF của các từ khớp
 - Postgres tách tiếng Việt theo âm tiết, nên các âm tiết phổ biến ("xử", "lý", "lỗi") lấn át từ hiếm mang tính quyết định ("401", "unauthorized"). Đã thử dùng `ts_rank_cd` rồi lọc theo tỷ lệ 30% số chunk, nhưng vẫn xếp AUTO-07 lên đầu.
@@ -252,7 +252,7 @@ Mỗi thư viện là phụ thuộc trực tiếp của một thành phần đã
 ### D-53. Thứ tự trong worker: che secret → guard → lịch sử → viết lại câu hỏi → truy xuất → chính sách → ngưỡng → LLM → kiểm tra → ghép câu trả lời
 - Guard chạy trước mọi lệnh gọi tốn tiền (embedding, LLM). Câu hỏi chính sách không có căn cứ và câu hỏi dưới ngưỡng đều **không gọi LLM** (có test `llm.calls == []`).
 - Chỉ viết lại câu hỏi khi có lịch sử. Nếu bước viết lại lỗi thì dùng câu gốc, không làm hỏng cả yêu cầu.
-- Kiểm tra chính sách cần kết quả truy xuất, nên chạy sau bước truy xuất (CLAUDE.md đặt bước 9 trước bước 11, nhưng kết quả cuối cùng như nhau).
+- Kiểm tra chính sách cần kết quả truy xuất, nên chạy sau bước truy xuất (thiết kế ban đầu đặt bước phân loại chính sách trước bước truy xuất, nhưng kết quả cuối cùng như nhau).
 
 ### D-54. Worker idempotent ở 3 điểm
 1. Đầu job: nếu `outbox` đã có event thì dừng (retry sau khi đã gửi sẽ không gọi lại LLM, tránh tốn tiền).
@@ -345,7 +345,7 @@ Cosine top-1 đo được trên 14 câu thật (8 tin mẫu HR + các tình hu�
 - Giá chưa có (null): chi phí là `null`, không phải 0. `pricing.cost_complete = false` và `models_missing_price` nêu tên model. Không có token thì chi phí là 0, nên tin bị bỏ qua hay bị từ chối trước khi gọi LLM vẫn được tính đủ.
 - Tên model kèm ngày do provider trả về (`gpt-x-2026-01-01`) được tra theo tiền tố dài nhất khớp (`gpt-x`).
 - `pricing.yaml` trong repo chỉ có placeholder; có test bảo đảm không ai lỡ commit giá tự bịa.
-- Loại bỏ: chỉ cộng `cost_usd` đã ghi (giá điền sau thì lịch sử mãi là null); hardcode giá (vi phạm CLAUDE.md §11).
+- Loại bỏ: chỉ cộng `cost_usd` đã ghi (giá điền sau thì lịch sử mãi là null); hardcode giá (giá phải điền tay từ trang giá chính thức).
 
 ### D-71. Latency = từ lúc webhook nhận tin đến lúc gửi trả lời (thời gian học viên chờ), báo trung bình + p95
 - Tính gồm cả thời gian chờ trong hàng đợi, chỉ cho các outcome do bot xử lý (`answered|partial|handoff|refused|error`). Latency của tin bị bỏ qua hay bị trùng chỉ là thời gian của webhook, nếu tính vào sẽ kéo số liệu xuống sai.
@@ -356,7 +356,7 @@ Cosine top-1 đo được trên 14 câu thật (8 tin mẫu HR + các tình hu�
 - Các hằng số trong biểu thức GROUP BY được render inline, không dùng tham số bind. Nếu bind, Postgres thấy `$1` ở SELECT và `$2` ở GROUP BY là hai biểu thức khác nhau và báo lỗi.
 
 ### D-73. Phạm vi số liệu
-- Tin trùng được thống kê ở dòng `(chưa xác định)`, vì theo CLAUDE.md §5 chống trùng (bước 3) chạy trước khi ánh xạ nhóm sang lớp (bước 4); lọc theo lớp sẽ không thấy các dòng này.
+- Tin trùng được thống kê ở dòng `(chưa xác định)`, vì chống trùng chạy trước khi ánh xạ nhóm sang lớp; lọc theo lớp sẽ không thấy các dòng này.
 - `tickets_by_reason` tính mọi request có lý do chuyển giảng viên: `handoff`, `partial` (`partial_coverage`) và `error`. Đối chiếu khớp với bảng `handoff_tickets`.
 - `/admin/security-events` chỉ trả 12 ký tự đầu của user hash: đủ để nhận ra cùng một người, không lộ thêm gì. Chi tiết sự kiện đã được che khi ghi.
 - Kiểm chứng trên stack thật: mọi số đếm, token, ticket theo lý do và sự kiện bảo mật trong `/admin/stats` khớp với SQL tính trực tiếp trên các bảng.
@@ -422,7 +422,7 @@ Cosine top-1 đo được trên 14 câu thật (8 tin mẫu HR + các tình hu�
 - Chọn: `INSTRUCTOR_API_KEYS=CLASS=key,...` trong `.env`. Server so khớp khóa trong header `X-Admin-Key` (hằng thời gian, duyệt hết danh sách) và sinh `Principal(role, name, class_id)`. Mọi truy vấn ticket/tài liệu/thống kê của giảng viên bị ghim vào `class_id` của khóa: đối tượng lớp khác trả 404 (không lộ sự tồn tại), xin lọc lớp khác trả 403. Thao tác toàn hệ thống (bật/tắt bot, sự kiện bảo mật, `/demo`, tài liệu tải lên dưới COMMON vì nó nuôi nhiều lớp) chỉ cho quản trị.
 - `approved_by` khi giảng viên duyệt FAQ = tên giảng viên trong `classes.yaml`, bỏ qua giá trị client gửi.
 - Kiểm tra lúc khởi động: mã lớp phải có trong `classes.yaml` (COMMON không có giảng viên), mỗi khóa ≥ 16 ký tự, không trùng nhau, không trùng khóa quản trị. Bật `hide_input_in_errors` cho Settings để khóa sai định dạng không bị in vào log lỗi.
-- Giữ tên header `X-Admin-Key` (= "khóa vào khu quản trị") để client và test cũ không đổi; CLAUDE.md §9 mô tả một khóa, đây là phần mở rộng được người dùng duyệt.
+- Giữ tên header `X-Admin-Key` (= "khóa vào khu quản trị") để client và test cũ không đổi; thiết kế ban đầu chỉ có một khóa quản trị, đây là phần mở rộng.
 - Loại: tài khoản + mật khẩu + session (giai đoạn C của đề bài, cần lưu mật khẩu, CSRF, quên mật khẩu…); JWT có claim lớp (thêm thư viện và vòng đời token mà MVP chưa cần). Khi lên SSO chỉ cần thay `require_staff`, phần `Principal` giữ nguyên.
 
 ### D-84. Trang `/demo` dạng ứng dụng chat + khung sự kiện webhook
@@ -432,6 +432,6 @@ Cosine top-1 đo được trên 14 câu thật (8 tin mẫu HR + các tình hu�
 - Tin học viên gõ trên trang chỉ lưu trong `sessionStorage` của tab; tin của bot luôn đọc lại từ outbox. Không thêm bảng hay API lưu tin học viên chỉ để phục vụ demo.
 
 ### D-85. `checked_at` trong `pricing.yaml` là tùy chọn
-- Đơn giá OpenAI của các model đã chọn do người dùng điền tay từ trang giá chính thức (CLAUDE.md §11). Ngày kiểm tra không ảnh hưởng đến cách tính chi phí, nên không bắt buộc.
+- Đơn giá OpenAI của các model đã chọn do người dùng điền tay từ trang giá chính thức. Ngày kiểm tra không ảnh hưởng đến cách tính chi phí, nên không bắt buộc.
 - Bỏ test bắt buộc `checked_at`. Trường vẫn còn: nếu điền thì trang admin hiển thị cạnh dòng chi phí; để trống thì không hiển thị gì.
 - Không đổi: giá không bao giờ hardcode trong code; model chưa có giá thì `cost_usd = null`, không tính 0.

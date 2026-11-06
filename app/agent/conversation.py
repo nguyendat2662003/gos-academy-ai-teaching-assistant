@@ -1,4 +1,4 @@
-"""Short-term conversation context per (class_id, user_hash) with a TTL (CLAUDE.md §8).
+"""Short-term conversation context per (class_id, user_hash) with a TTL.
 
 Context of another class is never read: class_id is part of every query.
 """

@@ -1,4 +1,4 @@
-"""Citation line built from chunk metadata — never from LLM text (CLAUDE.md §8, DECISIONS D-03).
+"""Citation line built from chunk metadata — never from LLM text (DECISIONS D-03).
 
 📚 Nguồn: DOC-AUTO-01 – AUTO-03 (02_Giao_trinh_AI_Automation_n8n.docx);
           DOC-FAQ-01 – AUTO-CLASS-02, dòng 2 (03_….docx)

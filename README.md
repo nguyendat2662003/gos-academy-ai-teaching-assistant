@@ -4,12 +4,12 @@ AI trợ giảng trả lời câu hỏi học viên trong nhóm chat (giai đo�
 Bot trả lời bằng tiếng Việt dựa trên học liệu đã duyệt của **đúng lớp**, có dẫn nguồn, và chuyển giảng viên khi
 không đủ căn cứ.
 
-- Đặc tả: [CLAUDE.md](CLAUDE.md) · Đề bài: `docs/de_bai.pdf` (không đưa lên repo; đặt file vào đường dẫn này khi cần)
+- Đề bài: `docs/de_bai.pdf` (không đưa lên repo; đặt file vào đường dẫn này khi cần)
 - Kiến trúc (sơ đồ Mermaid, luồng dữ liệu, cách ly lớp, vai trò & quyền): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Kiểm thử, kết quả 7 tình huống, đánh giá RAG: [docs/TEST_REPORT.md](docs/TEST_REPORT.md)
   ([SCENARIOS_RESULTS](docs/SCENARIOS_RESULTS.md), [EVAL_RESULTS](docs/EVAL_RESULTS.md))
 - Chi phí vận hành & điều kiện tích hợp Zalo thật: [docs/COST_AND_ZALO.md](docs/COST_AND_ZALO.md)
-- Quyết định kỹ thuật (D-01…D-79): [docs/DECISIONS.md](docs/DECISIONS.md)
+- Quyết định kỹ thuật (D-01…D-85): [docs/DECISIONS.md](docs/DECISIONS.md)
 
 > Trạng thái: **hoàn thành MVP (Phase 0–7)**. 226 test offline xanh; trên stack thật với OpenAI: 7/7 tình
 > huống đạt, đánh giá 40 câu golden quyết định đúng 40/40, rò rỉ chéo lớp 0. Tích hợp Zalo thật mới ở mức khung

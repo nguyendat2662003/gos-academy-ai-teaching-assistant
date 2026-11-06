@@ -2,7 +2,7 @@
 
 THE ONLY module that searches chunks for answering. Every query is scoped in SQL to
 `class_id IN (:class_id, <shared scope>)` and to retrievable sources (active documents, active FAQ entries)
-— CLAUDE.md §1.2, §7. `class_id` is a required keyword-only argument with no default.
+— hard constraint 2 (docs/ARCHITECTURE.md §3). `class_id` is a required keyword-only argument with no default.
 """
 
 import math

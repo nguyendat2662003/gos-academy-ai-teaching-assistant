@@ -1,4 +1,4 @@
-"""The 7 mandatory scenarios (CLAUDE.md §13), end to end: webhook -> queue -> worker -> outbox.
+"""The 7 mandatory scenarios (docs/TEST_REPORT.md §1), end to end: webhook -> queue -> worker -> outbox.
 
 Real sample material, fake embedding, fake LLM (offline). Scenario 6 (duplicates) lives in test_dedupe.py.
 """

@@ -1,4 +1,4 @@
-"""Answer one student question (CLAUDE.md §5 steps 7–15). Channel-agnostic: returns the reply, sends nothing.
+"""Answer one student question (worker, ARCHITECTURE §2). Channel-agnostic: returns the reply, sends nothing.
 
 redact → guard → history → rewrite → policy → retrieve → threshold → LLM (retry) → verify → compose
 """

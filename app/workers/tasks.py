@@ -1,4 +1,4 @@
-"""arq tasks (asynchronous part of CLAUDE.md §5). Every task is idempotent per (channel, event_id)."""
+"""arq tasks (async part of the flow, ARCHITECTURE §2). Every task is idempotent per (channel, event_id)."""
 
 import logging
 import time

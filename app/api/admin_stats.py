@@ -1,4 +1,4 @@
-"""Monitoring API (X-Admin-Key): usage/cost statistics and security events. CLAUDE.md §11–12.
+"""Monitoring API (X-Admin-Key): usage/cost statistics and security events.
 
 Roles (D-83): an instructor key gets the stats of its own class only; security events are admin only (they
 include events with no class, e.g. invalid webhook signatures).

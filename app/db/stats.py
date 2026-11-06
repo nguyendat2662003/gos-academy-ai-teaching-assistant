@@ -1,4 +1,4 @@
-"""Aggregates behind GET /admin/stats (CLAUDE.md §11).
+"""Aggregates behind GET /admin/stats.
 
 Source of truth = token counts in request_logs / documents / faq_entries. Cost is derived at query time:
 tokens × the current config/pricing.yaml, so prices filled in later also price earlier traffic, and an unknown
@@ -23,9 +23,7 @@ REPORT_TZ = "Asia/Ho_Chi_Minh"
 VN = timezone(timedelta(hours=7), "ICT")
 BOT_OUTCOMES = (Outcome.ANSWERED, Outcome.PARTIAL, Outcome.HANDOFF, Outcome.REFUSED, Outcome.ERROR)
 COUNTED = (*BOT_OUTCOMES, Outcome.IGNORED, Outcome.DUPLICATE, Outcome.RATE_LIMITED)
-UNKNOWN_CLASS = (
-    "(chưa xác định)"  # duplicates are rejected before the group is resolved (CLAUDE.md §5 step 3)
-)
+UNKNOWN_CLASS = "(chưa xác định)"  # duplicates are rejected before the group is resolved
 
 
 @dataclass(frozen=True)

@@ -1,4 +1,4 @@
-"""Heuristic guard on the (already redacted) student question (CLAUDE.md §5 step 8, §9).
+"""Heuristic guard on the (already redacted) student question.
 
 Three checks, accent-insensitive, Vietnamese + English:
 1. prompt_injection      — instructions aimed at the bot (reuses the document rules + question-only rules)

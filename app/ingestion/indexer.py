@@ -1,6 +1,6 @@
 """Index a source file into the knowledge base: parse -> chunk -> scope -> embed -> versioned swap.
 
-Rules (CLAUDE.md §7, DECISIONS D-02, D-36..D-39):
+Rules (DECISIONS D-02, D-36..D-39):
 - Each chunk is assigned a scope from its section-code prefix (config/classes.yaml). A file uploaded under a
   class may only contain that class's sections; only a file uploaded under the shared scope (COMMON) may be
   split across scopes. Anything else is refused before writing.

@@ -1,4 +1,4 @@
-"""Checks on the LLM answer before anything reaches students (CLAUDE.md §5 step 14)."""
+"""Checks on the LLM answer before anything reaches students."""
 
 from dataclasses import dataclass, field
 

@@ -53,7 +53,7 @@ flowchart LR
 
 | Thành phần | Thư mục | Vai trò |
 |---|---|---|
-| Channel adapter | `app/channels/` | `ChannelAdapter` (verify, parse, send_reply). `MockWebhookAdapter` ghi tin "đã gửi" vào `outbox`; `ZaloGMFAdapter` là khung, các hàm ném `NotImplementedError` (CLAUDE.md §6). |
+| Channel adapter | `app/channels/` | `ChannelAdapter` (verify, parse, send_reply). `MockWebhookAdapter` ghi tin "đã gửi" vào `outbox`; `ZaloGMFAdapter` là khung, các hàm ném `NotImplementedError`. |
 | Ingress | `app/channels/ingress.py` | Phần đồng bộ (< 300 ms): chống trùng, bỏ tin bot/không trigger/nhóm lạ/lớp tắt, rate limit, che secret, đưa vào hàng đợi. |
 | Pipeline | `app/agent/` | Phần bất đồng bộ: guard, chính sách, viết lại câu hỏi, gọi LLM, kiểm tra, ticket, ghép nguồn, ghi log. |
 | Kho tri thức | `app/ingestion/` | Parse DOCX/PDF/XLSX → chunk theo cấu trúc → phân phạm vi theo mã mục → embed → swap version. |
@@ -184,7 +184,7 @@ erDiagram
     classes ||--o{ conversation_turns : "theo user_hash"
 ```
 
-- `documents`: version + `content_hash` theo phạm vi; trạng thái `processing → active`, bản cũ thành `superseded` và chunk cũ bị xóa trong cùng transaction (CLAUDE.md §7; embed lỗi thì bản cũ vẫn `active`, D-41). Hash gồm cả `provider:model:dim` của embedding, nên đổi model sẽ tự embed lại (D-38).
+- `documents`: version + `content_hash` theo phạm vi; trạng thái `processing → active`, bản cũ thành `superseded` và chunk cũ bị xóa trong cùng transaction (embed lỗi thì bản cũ vẫn `active`, D-41). Hash gồm cả `provider:model:dim` của embedding, nên đổi model sẽ tự embed lại (D-38).
 - `processed_events (channel, event_id)` UNIQUE và unique một phần trên `outbox(channel, event_id)` bảo đảm mỗi event chỉ được trả lời một lần (D-17).
 - Migration: `0001` (toàn bộ bảng + pgvector + HNSW + tsvector), `0002` (nguồn gốc tài liệu), `0003` (model embedding + token FAQ).
 

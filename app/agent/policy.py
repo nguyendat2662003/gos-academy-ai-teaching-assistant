@@ -1,4 +1,4 @@
-"""Administrative / sensitive topics (CLAUDE.md §5 step 9, DECISIONS D-05, D-47).
+"""Administrative / sensitive topics (DECISIONS D-05, D-47).
 
 Such questions are handed off to staff by default. They may only be answered when retrieval returns a chunk
 in which ONE sentence names the topic and gives a concrete amount or percentage. A chunk that merely says

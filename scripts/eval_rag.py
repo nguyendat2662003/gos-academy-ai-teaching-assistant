@@ -1,4 +1,4 @@
-"""Evaluate retrieval and answering on data/eval/golden.yaml (CLAUDE.md §13). Prints a Markdown report.
+"""Evaluate retrieval and answering on data/eval/golden.yaml. Prints a Markdown report.
 
   python scripts/eval_rag.py                 # retrieval only: hit@k, MRR, cross-class leak, threshold sweep
   python scripts/eval_rag.py --full          # + full pipeline with the configured LLM (costs tokens)

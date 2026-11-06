@@ -1,4 +1,4 @@
-"""Self-audit of the 4 hard constraints (CLAUDE.md §1). Each test names the constraint it proves.
+"""Self-audit of the 4 hard constraints (docs/TEST_REPORT.md §2). Each test names the constraint it proves.
 
 Other tests that prove them are listed in docs/TEST_REPORT.md ("Ràng buộc cứng → bằng chứng").
 """

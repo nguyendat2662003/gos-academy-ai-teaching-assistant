@@ -1,4 +1,4 @@
-"""Synchronous part of message handling (CLAUDE.md §5 steps 3–6): dedupe, filter, rate limit, enqueue.
+"""Synchronous part of message handling (webhook, ARCHITECTURE §2): dedupe, filter, rate limit, enqueue.
 
 Kept free of HTTP concerns so it can be reused by every channel adapter.
 """
