@@ -9,9 +9,9 @@ không đủ căn cứ.
 - Kiểm thử, kết quả 7 tình huống, đánh giá RAG: [docs/TEST_REPORT.md](docs/TEST_REPORT.md)
   ([SCENARIOS_RESULTS](docs/SCENARIOS_RESULTS.md), [EVAL_RESULTS](docs/EVAL_RESULTS.md))
 - Chi phí vận hành & điều kiện tích hợp Zalo thật: [docs/COST_AND_ZALO.md](docs/COST_AND_ZALO.md)
-- Quyết định kỹ thuật (D-01…D-87): [docs/DECISIONS.md](docs/DECISIONS.md)
+- Quyết định kỹ thuật (D-01…D-89): [docs/DECISIONS.md](docs/DECISIONS.md)
 
-> Trạng thái: **hoàn thành MVP (Phase 0–7)**. 252 test offline xanh; trên stack thật với OpenAI: 7/7 tình
+> Trạng thái: **hoàn thành MVP (Phase 0–7)**. 262 test offline xanh; trên stack thật với OpenAI: 7/7 tình
 > huống đạt, đánh giá 40 câu golden quyết định đúng 40/40, rò rỉ chéo lớp 0. Tích hợp Zalo thật mới ở mức khung
 > (cần quyền OA + GMF).
 
@@ -120,6 +120,11 @@ Quy tắc:
 - Nội dung không đổi → `unchanged`, không tốn token.
 - Nội dung đổi → version mới, chỉ chuyển `active` sau khi embed xong. Version cũ chuyển `superseded` và chunk cũ bị
   xóa trong cùng transaction.
+- "Version cũ" là tài liệu đang `active` cùng phạm vi có **cùng tên file hoặc cùng mã tài liệu** (`Mã tài liệu:
+  DOC-GS-01`): đổi tên file vẫn thay đúng bản cũ, kết quả ghi tên file bị thay ở `replaced` (D-88). Mã tài liệu đã
+  thuộc một nguồn khác trong cùng lớp → `422`.
+- Nội dung của một lớp đổi (phiên bản mới, bị xóa) → các FAQ đã duyệt của lớp đó được đánh dấu **cần xem lại**;
+  đổi tài liệu COMMON thì đánh dấu FAQ của mọi lớp (D-89, xem "FAQ đã duyệt" bên dưới).
 - File tải lên cho một lớp mà chứa mục của lớp khác → `422`, không ghi gì vào DB.
 
 ## Gửi tin nhắn mô phỏng
@@ -184,6 +189,18 @@ cho lớp của ticket; câu hỏi tương tự lần sau bot trả lời với 
 
 Ticket tạo từ `/api/ask` không có nhóm chat nên không gửi vào nhóm được (`409`).
 
+### FAQ đã duyệt: xem lại khi tài liệu đổi (D-89)
+
+Khi tài liệu của một lớp có phiên bản mới (nội dung thật sự đổi) hoặc bị xóa, mọi FAQ đang dùng của lớp đó được đánh
+dấu **cần xem lại** kèm lý do (ví dụ "Tài liệu DOC-GS-01 (…docx) vừa có phiên bản v4"). Bot **vẫn dùng** FAQ cho đến
+khi giảng viên quyết định, trên mục "FAQ đã duyệt" của `/admin/ui`: **Vẫn đúng**, **Sửa** (embed lại ngay, câu cũ không
+còn được truy xuất) hoặc **Tắt** (bot không dùng nữa; **Bật lại** được).
+
+| Method | Path | Ghi chú |
+|---|---|---|
+| GET | `/admin/faqs?class_id=&status=review\|active\|inactive` | FAQ cần xem lại đứng đầu |
+| PATCH | `/admin/faqs/{id}` | `{question?, answer?, active?, reviewed?}`; mọi thay đổi (kể cả `reviewed: true`) xóa cờ cần xem lại; sửa nội dung thì người duyệt = khóa đang dùng |
+
 ### Khóa giảng viên theo lớp (D-83)
 
 Mỗi lớp có một khóa riêng cho giảng viên, khai trong `.env` (mỗi khóa ≥ 16 ký tự, khác nhau và khác
@@ -200,6 +217,7 @@ Rồi `docker compose up -d` (api đọc lại `.env`; sai mã lớp thì api kh
 | Thao tác | Quản trị | Giảng viên |
 |---|---|---|
 | Ticket, trả lời, gửi nhóm, duyệt FAQ | mọi lớp | lớp mình (lớp khác → 404) |
+| FAQ đã duyệt: xem, xác nhận, sửa, tắt/bật | mọi lớp | lớp mình (lớp khác → 404) |
 | Tài liệu: xem | mọi lớp | lớp mình + COMMON |
 | Tài liệu: tải lên / xóa / đánh lại chỉ mục | mọi lớp | chỉ tài liệu riêng của lớp mình |
 | Thống kê `/admin/stats` | mọi lớp | lớp mình |
@@ -278,7 +296,7 @@ docker compose up -d postgres redis
 ```
 app/core/      config (env), logging JSON, security helpers, classes registry, redis, pricing (pricing.yaml)
 app/db/        models SQLAlchemy, session, seed classes.yaml, stats (tổng hợp cho /admin/stats)
-app/api/       routers: /health, /webhooks/{mock,zalo}, /api/ask, /admin/{me,classes,documents,handoffs,stats,security-events}, /admin/ui, /demo
+app/api/       routers: /health, /webhooks/{mock,zalo}, /api/ask, /admin/{me,classes,documents,faqs,handoffs,stats,security-events}, /admin/ui, /demo
 app/channels/  ChannelAdapter, MockWebhookAdapter (HMAC + outbox), ZaloGMFAdapter (stub), ingress (dedupe → lọc → rate limit → enqueue)
 app/agent/     pipeline (điều phối), guard, policy, prompts, verify, sources, conversation, handoff, messages
 app/ingestion/ parsers (DOCX/PDF/XLSX), chunker, luật flag injection, indexer (phân lớp, versioning), faq (duyệt ticket → FAQ)
@@ -287,7 +305,7 @@ app/providers/ embedding + LLM: openai, gemini, fake; retry (timeout + backoff)
 app/retrieval/  hybrid_search (vector + full-text IDF, RRF) — bắt buộc class_id
 app/workers/   arq worker: process_message, send_notice
 scripts/       send_mock_event, ingest_samples, preview_chunks, derive_samples, run_scenarios, eval_rag
-alembic/       migration 0001 (extension vector + toàn bộ bảng), 0002 (documents: origin_scope, storage_path), 0003 (model embedding + token FAQ)
+alembic/       migration 0001 (extension vector + toàn bộ bảng), 0002 (documents: origin_scope, storage_path), 0003 (model embedding + token FAQ), 0004 (FAQ cần xem lại, index mã tài liệu)
 config/        classes.yaml (lớp ↔ nhóm chat ↔ tiền tố mã mục), pricing.yaml (đơn giá token — tự điền)
 data/samples/  học liệu mẫu theo lớp (KHÔNG sửa); _meta/ = tài liệu hướng dẫn + tin nhắn mô phỏng (không ingest)
 data/derived/  bản PDF/XLSX chuyển từ samples (không đổi nội dung, không ingest mặc định)

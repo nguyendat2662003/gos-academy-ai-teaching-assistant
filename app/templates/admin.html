@@ -96,6 +96,28 @@
     </div>
   </section>
 </div>
+
+<section class="card">
+  <h2>FAQ đã duyệt <span id="faq-count" class="muted"></span></h2>
+  <p class="muted">Khi tài liệu của lớp có phiên bản mới hoặc bị xóa, các FAQ của lớp đó được đánh dấu "cần xem lại":
+    câu trả lời cũ có thể mâu thuẫn với tài liệu mới. Bot vẫn dùng FAQ cho đến khi bạn xác nhận, sửa hoặc tắt nó.
+    FAQ đã tắt không còn được bot dùng.</p>
+  <div class="row">
+    <select id="q-class" aria-label="Lớp">
+      <option value="">Tất cả lớp</option>
+      {% for c in classes %}<option value="{{ c.id }}">{{ c.id }} – {{ c.name }}</option>{% endfor %}
+    </select>
+    <select id="q-status" aria-label="Trạng thái FAQ">
+      <option value="">Mọi trạng thái</option>
+      <option value="review" selected>Cần xem lại</option>
+      <option value="active">Đang dùng</option>
+      <option value="inactive">Đã tắt</option>
+    </select>
+    <button id="q-reload" type="button">Tải lại</button>
+  </div>
+  <div class="msg" id="q-msg"></div>
+  <div id="faqs"></div>
+</section>
 {% endblock %}
 {% block scripts %}
 <script nonce="{{ nonce }}">
@@ -222,6 +244,64 @@
         h("td", { class: "q", title: e.detail || "" }, e.detail || ""), h("td", {}, e.user_ref || "–"))));
     } catch (e) { say($("s-msg"), e.message, "err"); }
   }
+  // ---------------------------------------------------------------- approved FAQ (D-89)
+  function faqStatus(f) {
+    if (!f.active) return h("span", { class: "badge" }, "đã tắt");
+    if (f.needs_review) return h("span", { class: "badge b-partial" }, "cần xem lại");
+    return h("span", { class: "badge b-answer" }, "đang dùng");
+  }
+  async function patchFaq(f, body, done) {
+    try {
+      await api("/admin/faqs/" + f.id, { method: "PATCH", json: body });
+      say($("q-msg"), "FAQ #" + f.id + ": " + done, "ok");
+      loadFaqs(true);
+    } catch (e) { say($("q-msg"), "FAQ #" + f.id + ": " + e.message, "err"); }
+  }
+  function faqCard(f) {
+    const q = h("textarea", { maxlength: "2000", "aria-label": "Câu hỏi FAQ #" + f.id }); q.value = f.question;
+    const a = h("textarea", { maxlength: "4000", "aria-label": "Câu trả lời FAQ #" + f.id }); a.value = f.answer;
+    const edit = h("div", { hidden: true },
+      h("div", { class: "field" }, h("label", {}, "Câu hỏi"), q),
+      h("div", { class: "field" }, h("label", {}, "Trả lời"), a),
+      h("div", { class: "row" },
+        h("button", { type: "button", onclick: () => patchFaq(f, { question: q.value, answer: a.value }, "đã lưu, bot dùng nội dung mới ngay.") }, "Lưu nội dung mới"),
+        h("button", { type: "button", class: "secondary", onclick: () => { edit.hidden = true; view.hidden = false; } }, "Hủy")));
+    const view = h("div", {},
+      h("div", { class: "field" }, h("label", {}, "Câu hỏi"), h("div", { class: "pre" }, f.question)),
+      h("div", { class: "field" }, h("label", {}, "Trả lời"), h("div", { class: "pre" }, f.answer)));
+    return h("div", { class: "card" },
+      h("div", { class: "row" }, h("strong", {}, "FAQ #" + f.id), h("span", {}, f.class_id), faqStatus(f),
+        h("span", { class: "muted" }, "duyệt bởi " + (f.approved_by || "–") +
+          (f.approved_at ? " lúc " + new Date(f.approved_at).toLocaleString("vi-VN") : "") +
+          (f.source_ticket_id ? " · từ yêu cầu #H-" + String(f.source_ticket_id).padStart(4, "0") : ""))),
+      f.needs_review && f.active ? h("p", { class: "msg" }, "Lý do cần xem lại: " + (f.review_reason || "tài liệu của lớp đã thay đổi")) : "",
+      view, edit,
+      h("div", { class: "row" },
+        f.needs_review && f.active
+          ? h("button", { type: "button", onclick: () => patchFaq(f, { reviewed: true }, "đã xác nhận vẫn đúng.") }, "Vẫn đúng") : "",
+        h("button", { type: "button", class: "secondary", onclick: () => { edit.hidden = false; view.hidden = true; } }, "Sửa"),
+        f.active
+          ? h("button", { type: "button", class: "secondary", onclick: () => patchFaq(f, { active: false }, "đã tắt, bot không dùng nữa.") }, "Tắt")
+          : h("button", { type: "button", class: "secondary", onclick: () => patchFaq(f, { active: true }, "đã bật lại.") }, "Bật lại")));
+  }
+  async function loadFaqs(keepMsg) {
+    const p = new URLSearchParams();
+    if ($("q-class").value) p.set("class_id", $("q-class").value);
+    if ($("q-status").value) p.set("status", $("q-status").value);
+    try {
+      const faqs = await (await api("/admin/faqs?" + p)).json();
+      $("faqs").replaceChildren(...(faqs.length ? faqs.map(faqCard) : [h("p", { class: "muted" }, "Không có FAQ nào.")]));
+      const review = new URLSearchParams(p); review.set("status", "review");
+      const pending = $("q-status").value === "review" ? faqs.length
+        : (await (await api("/admin/faqs?" + review)).json()).length;
+      $("faq-count").textContent = pending ? "(" + pending + " cần xem lại)" : "";
+      if (!keepMsg) say($("q-msg"), "");
+    } catch (e) { say($("q-msg"), e.message, "err"); }
+  }
+  $("q-reload").addEventListener("click", () => loadFaqs());
+  $("q-class").addEventListener("change", () => loadFaqs());
+  $("q-status").addEventListener("change", () => loadFaqs());
+
   $("s-load").addEventListener("click", loadStats);
   $("reload").addEventListener("click", loadTickets);
   $("f-class").addEventListener("change", loadTickets);
@@ -230,12 +310,12 @@
   async function init() {
     const me = await whoami();
     const instructor = me && me.role === "instructor";
-    for (const id of ["f-class", "s-class"]) {
+    for (const id of ["f-class", "s-class", "q-class"]) {
       $(id).value = instructor ? me.class_id : "";
       $(id).disabled = !!instructor;
     }
     $("sec-box").hidden = !(me && me.role === "admin");
-    if (me) { loadClasses(); loadTickets(); loadStats(); }
+    if (me) { loadClasses(); loadTickets(); loadStats(); loadFaqs(); }
   }
   document.addEventListener("keychange", init);
   init();

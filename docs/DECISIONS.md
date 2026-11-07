@@ -450,3 +450,18 @@ Cosine top-1 đo được trên 14 câu thật (8 tin mẫu HR + các tình hu�
 - Tất định, không dùng LLM để phân loại: so khớp từ sau khi bỏ dấu. Câu có thêm nội dung ("chào bạn, cho mình hỏi SUMIFS…") vẫn là câu hỏi thật và đi qua pipeline bình thường, nên không có nguy cơ nuốt mất câu hỏi.
 - Log: outcome mới `smalltalk`, outbox kind `smalltalk`. Thống kê đếm riêng, không tính vào "câu hỏi", để tỷ lệ trả lời/chuyển giảng viên không bị lệch. Cột outcome là chuỗi (`String(16)`), không cần migration.
 - Loại bỏ: để LLM tự trả lời lời chào (tốn token, và trái nguyên tắc chỉ trả lời từ tài liệu); bỏ qua im lặng (học viên tưởng bot hỏng).
+
+### D-88. Phiên bản tài liệu nhận theo tên file hoặc mã tài liệu
+- Vấn đề: "phiên bản trước" từng được tìm theo tên file. Giảng viên tải `Giao_trinh_v2.docx` thay cho `Giao_trinh.docx` thì hệ thống coi là tài liệu mới: bản cũ vẫn `active`, bot đọc cả hai và có thể trả lời mâu thuẫn.
+- Chọn: trong cùng phạm vi gốc và cùng lớp, tài liệu `active` có **cùng tên file hoặc cùng mã tài liệu** (`Mã tài liệu: DOC-GS-01`, đọc từ đầu file) là phiên bản trước. Bản mới thay tất cả các bản khớp trong cùng transaction như cũ (D-36). Số version nối tiếp qua lần đổi tên. API trả `replaced` = các tên file bị thay. File không có mã tài liệu vẫn khớp theo tên như trước.
+- Mã tài liệu đang thuộc một tài liệu `active` của **nguồn khác** (phạm vi gốc khác) trong cùng lớp → từ chối (`422`) trước khi ghi gì. Hai nguồn cùng mã sẽ khiến dòng nguồn không còn chỉ đúng file, và không bản nào thay được bản nào.
+- Hệ quả cần biết: hai file khác nhau mà trùng mã tài liệu trong cùng lớp sẽ thay nhau. Đó là chủ ý: mã tài liệu là định danh mà học liệu dùng khi trích dẫn (M-02). Bản PDF trong `data/derived/` cùng mã với bản DOCX, nên nếu nạp vào cùng lớp nó sẽ thay bản DOCX.
+- Loại bỏ: chỉ cảnh báo mà vẫn giữ cả hai bản (vẫn trả lời mâu thuẫn); bắt giảng viên tự xóa bản cũ trước (dễ quên, và giữa hai thao tác lớp không có tài liệu).
+
+### D-89. FAQ đã duyệt được đánh dấu "cần xem lại" khi tài liệu của lớp đổi
+- Vấn đề: FAQ do giảng viên duyệt là bản ghi riêng, không gắn với phiên bản tài liệu. Giáo trình đổi hạn nộp nhưng FAQ cũ vẫn `active` và bot vẫn trích nó. Trước đây không có API nào để tắt hay sửa FAQ.
+- Chọn: khi nội dung một lớp thay đổi (phiên bản mới có nội dung khác, tài liệu bị xóa, hoặc file trộn không còn mục của lớp đó), mọi FAQ đang dùng của lớp đó được đặt `needs_review` kèm lý do, trong cùng transaction với việc thay tài liệu. Tài liệu COMMON đổi thì đánh dấu FAQ của mọi lớp, vì lớp nào cũng đọc COMMON. Chỉ so nội dung (vị trí + văn bản): nạp lại cùng nội dung hoặc đổi model embedding không đánh dấu.
+- FAQ cần xem lại **vẫn được dùng** cho tới khi giảng viên quyết định trên `/admin/ui` (mục "FAQ đã duyệt") hoặc `PATCH /admin/faqs/{id}`: Vẫn đúng (xóa cờ), Sửa (embed nội dung mới trước, rồi thay chunk trong một transaction; người duyệt = khóa đang dùng), Tắt (truy xuất đã lọc `FaqEntry.active`, nên bot ngừng dùng ngay; chunk được giữ để Bật lại không tốn embedding). Giảng viên chỉ thấy và sửa FAQ lớp mình (khác lớp → 404).
+- Không đánh dấu theo từng mục: FAQ của giảng viên không gắn với mã mục nào, nên không biết chắc FAQ nào liên quan tới mục vừa đổi. Đánh dấu cả lớp thì giảng viên phải duyệt nhiều hơn, nhưng không bỏ sót.
+- Loại bỏ: tự tắt FAQ khi tài liệu đổi (bot sẽ chuyển giảng viên lại những câu FAQ đang trả lời đúng, tạo ticket thừa); để LLM so FAQ với tài liệu mới (tốn token, kết quả không chắc chắn, trái nguyên tắc quyết định tất định).
+- Migration `0004`: `faq_entries.needs_review`, `review_reason`, `updated_at`; index `documents(origin_scope, doc_code, status)`.

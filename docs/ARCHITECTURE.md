@@ -187,7 +187,8 @@ erDiagram
 
 - `documents`: version + `content_hash` theo phạm vi; trạng thái `processing → active`, bản cũ thành `superseded` và chunk cũ bị xóa trong cùng transaction (embed lỗi thì bản cũ vẫn `active`, D-41). Hash gồm cả `provider:model:dim` của embedding, nên đổi model sẽ tự embed lại (D-38).
 - `processed_events (channel, event_id)` UNIQUE và unique một phần trên `outbox(channel, event_id)` bảo đảm mỗi event chỉ được trả lời một lần (D-17).
-- Migration: `0001` (toàn bộ bảng + pgvector + HNSW + tsvector), `0002` (nguồn gốc tài liệu), `0003` (model embedding + token FAQ).
+- Một tài liệu được nhận diện theo phạm vi gốc + tên file **hoặc** mã tài liệu, nên đổi tên file vẫn thay đúng bản cũ (D-88). Nội dung một lớp đổi → FAQ đã duyệt của lớp đó `needs_review` (D-89).
+- Migration: `0001` (toàn bộ bảng + pgvector + HNSW + tsvector), `0002` (nguồn gốc tài liệu), `0003` (model embedding + token FAQ), `0004` (FAQ cần xem lại, index mã tài liệu).
 
 ## 7. Triển khai
 

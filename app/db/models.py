@@ -155,6 +155,7 @@ class Document(Base):
         ),
         Index("ix_documents_class_status", "class_id", "status"),
         Index("ix_documents_source_file", "origin_scope", "filename", "status"),
+        Index("ix_documents_doc_code", "origin_scope", "doc_code", "status"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -190,9 +191,14 @@ class FaqEntry(Base):
     approved_by: Mapped[str | None] = mapped_column(String(255))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    # Set when the class's material changes: the answer may now contradict it (D-89). Still served until an
+    # instructor confirms, edits or deactivates it.
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    review_reason: Mapped[str | None] = mapped_column(String(255))
     embedding_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     embedding_model: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Chunk(Base):
