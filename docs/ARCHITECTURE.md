@@ -88,6 +88,7 @@ sequenceDiagram
     R->>W: process_message
     W->>DB: outbox đã có event này? → dừng (idempotent)
     W->>W: guard (injection / xin secret / lớp khác) → từ chối + security_event
+    W->>W: chỉ chào / cảm ơn → câu chào cố định (không LLM, không ticket)
     W->>W: chủ đề chính sách không có căn cứ cụ thể → ticket "policy" (không gọi LLM)
     W->>P: (có lịch sử) viết lại câu hỏi nối tiếp
     W->>P: embed câu hỏi

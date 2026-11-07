@@ -84,6 +84,16 @@ REFUSED_CROSS_CLASS = (
 )
 
 
+# Greetings / thanks to the bot (D-87): fixed replies, no LLM, no ticket. Placeholders: {class_name}, {trigger}.
+SMALLTALK_GREETING = (
+    "Chào bạn 👋 Mình là trợ lý của lớp {class_name}. Bạn cần hỏi gì về bài học thì nhắc {trigger} kèm câu hỏi "
+    'nhé, ví dụ: "{trigger} Bài tập nộp khi nào?". Mình trả lời dựa trên tài liệu của lớp và ghi rõ nguồn.'
+)
+SMALLTALK_THANKS = (
+    "Không có gì đâu bạn 😊 Nếu còn thắc mắc về bài học, bạn cứ nhắc {trigger} kèm câu hỏi nhé."
+)
+
+
 INSTRUCTOR_REPLY = "👩‍🏫 Giảng viên trả lời yêu cầu {ticket}\n❓ {question}\n\n{answer}"
 
 

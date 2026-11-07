@@ -5,7 +5,7 @@ LLM thật: OpenAI `gpt-6-luna` · embedding thật: `text-embedding-3-small` (7
 
 | Loại | Lệnh | Kết quả |
 |---|---|---|
-| Test offline (provider `fake`, embedding tất định) | `pytest` | **236 passed** |
+| Test offline (provider `fake`, embedding tất định) | `pytest` | **252 passed** |
 | Lint | `ruff check .` + `ruff format --check .` | sạch |
 | 7 tình huống trên stack thật (webhook → worker → LLM) | `docker compose exec api python scripts/run_scenarios.py` | **7/7 đạt** → [SCENARIOS_RESULTS.md](SCENARIOS_RESULTS.md) |
 | Đánh giá RAG, 40 câu golden | `docker compose exec api python scripts/eval_rag.py --full` | quyết định đúng **40/40**, hit@5 **100%**, rò rỉ chéo lớp **0** → [EVAL_RESULTS.md](EVAL_RESULTS.md) |
@@ -31,6 +31,7 @@ Các kiểm thử bổ sung:
 |---|---|
 | Chữ ký sai / timestamp cũ → 401 | `test_webhook_auth.py` (6 test: sai secret, quá 300 s, body bị sửa, thiếu header, không lưu payload, Zalo stub) |
 | Bỏ qua tin của bot, tin không trigger | `test_ingress.py::test_ignored_messages`, `test_unsupported_event_type_ignored` |
+| Lời chào / cảm ơn được chào lại, không gọi LLM, không tạo ticket, không tính là câu hỏi | `test_smalltalk.py` |
 | Nhắc `@Trợ lý` là lệnh gọi bot (hoa/thường, dấu tổ hợp, dấu phẩy sau tên; nhắc học viên khác hoặc nhắc giữa câu thì bỏ qua) | `test_ingress.py::test_extract_question`, `test_mentioning_the_bot_is_a_trigger` |
 | Lớp tắt bot | `test_class_toggle_requires_admin_and_disables_bot` |
 | Rate limit | `test_user_rate_limit_notifies_once`, `test_class_rate_limit` |

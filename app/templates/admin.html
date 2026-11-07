@@ -33,7 +33,7 @@
   <div class="scroll">
     <table>
       <thead><tr><th>Phạm vi</th><th>Câu hỏi</th><th>Trả lời</th><th>Một phần</th><th>Chuyển GV</th><th>Từ chối</th>
-        <th>Lỗi</th><th>Bỏ qua / trùng / giới hạn</th><th>Ticket theo lý do</th><th>Latency TB / p95 (ms)</th>
+        <th>Lỗi</th><th>Chào hỏi / bỏ qua / trùng / giới hạn</th><th>Ticket theo lý do</th><th>Latency TB / p95 (ms)</th>
         <th>Token vào / ra / embedding</th><th>Chi phí (USD)</th></tr></thead>
       <tbody id="s-rows"></tbody>
     </table>
@@ -195,7 +195,7 @@
     const reasons = Object.entries(m.tickets_by_reason || {}).map(([k, n]) => k + ": " + n).join(", ") || "–";
     const num = (v) => h("td", { class: "num" }, String(v ?? "–"));
     return h("tr", {}, h("td", {}, label), num(m.questions), num(m.answered), num(m.partial), num(m.handoff),
-      num(m.refused), num(m.error), num(m.ignored + " / " + m.duplicate + " / " + m.rate_limited), h("td", {}, reasons),
+      num(m.refused), num(m.error), num(m.smalltalk + " / " + m.ignored + " / " + m.duplicate + " / " + m.rate_limited), h("td", {}, reasons),
       num((m.latency_ms_avg ?? "–") + " / " + (m.latency_ms_p95 ?? "–")),
       num(m.input_tokens + " / " + m.output_tokens + " / " + m.embedding_tokens), num(money(m.cost_usd)));
   }

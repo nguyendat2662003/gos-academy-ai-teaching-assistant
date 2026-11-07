@@ -22,7 +22,8 @@ from app.db.models import Document, FaqEntry, Outcome, RequestLog, SecurityEvent
 REPORT_TZ = "Asia/Ho_Chi_Minh"
 VN = timezone(timedelta(hours=7), "ICT")
 BOT_OUTCOMES = (Outcome.ANSWERED, Outcome.PARTIAL, Outcome.HANDOFF, Outcome.REFUSED, Outcome.ERROR)
-COUNTED = (*BOT_OUTCOMES, Outcome.IGNORED, Outcome.DUPLICATE, Outcome.RATE_LIMITED)
+# smalltalk (greetings/thanks, D-87) is counted on its own, not as a question
+COUNTED = (*BOT_OUTCOMES, Outcome.SMALLTALK, Outcome.IGNORED, Outcome.DUPLICATE, Outcome.RATE_LIMITED)
 UNKNOWN_CLASS = "(chưa xác định)"  # duplicates are rejected before the group is resolved
 
 

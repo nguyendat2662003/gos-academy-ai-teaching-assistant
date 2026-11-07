@@ -9,15 +9,15 @@ không đủ căn cứ.
 - Kiểm thử, kết quả 7 tình huống, đánh giá RAG: [docs/TEST_REPORT.md](docs/TEST_REPORT.md)
   ([SCENARIOS_RESULTS](docs/SCENARIOS_RESULTS.md), [EVAL_RESULTS](docs/EVAL_RESULTS.md))
 - Chi phí vận hành & điều kiện tích hợp Zalo thật: [docs/COST_AND_ZALO.md](docs/COST_AND_ZALO.md)
-- Quyết định kỹ thuật (D-01…D-86): [docs/DECISIONS.md](docs/DECISIONS.md)
+- Quyết định kỹ thuật (D-01…D-87): [docs/DECISIONS.md](docs/DECISIONS.md)
 
-> Trạng thái: **hoàn thành MVP (Phase 0–7)**. 236 test offline xanh; trên stack thật với OpenAI: 7/7 tình
+> Trạng thái: **hoàn thành MVP (Phase 0–7)**. 252 test offline xanh; trên stack thật với OpenAI: 7/7 tình
 > huống đạt, đánh giá 40 câu golden quyết định đúng 40/40, rò rỉ chéo lớp 0. Tích hợp Zalo thật mới ở mức khung
 > (cần quyền OA + GMF).
 
 ## Bot xử lý một câu hỏi thế nào
 
-`@Trợ lý …` (hoặc `/hoi …`) → che secret → guard (injection / đòi bí mật / lớp khác → từ chối) → lịch sử (cùng lớp, có TTL)
+`@Trợ lý …` (hoặc `/hoi …`) → che secret → guard (injection / đòi bí mật / lớp khác → từ chối) → chỉ chào/cảm ơn → chào lại → lịch sử (cùng lớp, có TTL)
 → viết lại câu hỏi nối tiếp → truy xuất hybrid (chỉ lớp đó + COMMON) → chủ đề nhạy cảm không có căn cứ → chuyển
 giảng viên → điểm < `RETRIEVAL_MIN_SCORE` → chuyển giảng viên (không gọi LLM) → LLM trả JSON (timeout + retry)
 → kiểm tra (JSON, `answerable`, trích dẫn thuộc tập vừa truy xuất) → ghép câu trả lời + nguồn từ metadata.
@@ -28,6 +28,7 @@ giảng viên → điểm < `RETRIEVAL_MIN_SCORE` → chuyển giảng viên (kh
 | `partial` | chỉ một phần có căn cứ | phần trả lời được + "Phần “X” chưa có trong tài liệu…" + mã `#H-…` |
 | `handoff` | `no_context`, `low_confidence`, `policy` | thông báo đã chuyển giảng viên + mã `#H-…` |
 | `refused` | injection, đòi bí mật, đòi dữ liệu lớp khác | từ chối lịch sự (+ `security_events`) |
+| `smalltalk` | tin chỉ có lời chào / cảm ơn (`@Trợ lý chào bạn`) | câu chào cố định + cách hỏi; không gọi LLM, không tạo ticket (D-87) |
 | `error` | LLM lỗi sau khi đã retry | xin lỗi + mã `#H-…` (ticket `error`) |
 
 Mọi câu chữ gửi học viên nằm ở [app/agent/messages.py](app/agent/messages.py); prompt nằm ở

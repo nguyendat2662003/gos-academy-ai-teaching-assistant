@@ -90,7 +90,7 @@
   .kind { border-radius:999px; padding:0 7px; font-size:11px; font-weight:600; border:1px solid transparent; }
   .k-answer { background:#dcfce7; color:var(--ok); } .k-partial { background:#fef3c7; color:var(--warn); }
   .k-handoff { background:#ffedd5; color:#c2410c; } .k-refusal, .k-error { background:#fee2e2; color:var(--bad); }
-  .k-notice { background:#e0f2fe; color:#0369a1; } .k-instructor { background:#ede9fe; color:var(--violet); }
+  .k-notice, .k-smalltalk { background:#e0f2fe; color:#0369a1; } .k-instructor { background:#ede9fe; color:var(--violet); }
   .receipt { align-self:flex-end; margin:4px 0 2px; background:var(--pill); color:#fff; border-radius:999px; padding:1px 10px; font-size:12px; }
   .receipt.warn { background:#d9a441; } .receipt.bad { background:#d9534f; }
   .typing .bubble { color:var(--muted); font-style:italic; }
@@ -281,7 +281,7 @@
     { id: "bot_khac", name: "Một tài khoản bot khác", color: "#64748b", bot: true },  // loop protection demo
   ];
   const KIND = { answer: "Trả lời có nguồn", partial: "Trả lời một phần", handoff: "Chuyển giảng viên",
-                 refusal: "Từ chối", error: "Lỗi", notice: "Thông báo", instructor: "Giảng viên trả lời" };
+                 refusal: "Từ chối", error: "Lỗi", notice: "Thông báo", smalltalk: "Chào hỏi", instructor: "Giảng viên trả lời" };
   const SOURCES = "📚 Nguồn: ";
   const STORE = "gos_demo_v1";
   const $ = (id) => document.getElementById(id);

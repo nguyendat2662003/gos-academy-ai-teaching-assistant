@@ -17,7 +17,8 @@ async def record_reply(
     event_id: str | None,
 ) -> None:
     """Only called once the reply is actually sent (or returned), so a retried job does not double-log."""
-    if reply.outcome != "refused":  # refusals are not useful context for follow-up questions
+    # refusals and greetings/thanks are not useful context for follow-up questions
+    if reply.outcome not in ("refused", "smalltalk"):
         add_exchange(
             session,
             class_id=request.class_id,

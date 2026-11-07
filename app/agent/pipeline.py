@@ -1,6 +1,7 @@
 """Answer one student question (worker, ARCHITECTURE §2). Channel-agnostic: returns the reply, sends nothing.
 
-redact → guard → history → rewrite → policy → retrieve → threshold → LLM (retry) → verify → compose
+redact → guard → greeting/thanks → history → rewrite → policy → retrieve → threshold → LLM (retry)
+→ verify → compose
 """
 
 import logging
@@ -14,6 +15,7 @@ from app.agent.guard import check_question
 from app.agent.handoff import open_ticket
 from app.agent.policy import is_policy_evidence, sensitive_topic
 from app.agent.prompts import RewriteResult, build_answer_messages, build_rewrite_messages
+from app.agent.smalltalk import classify_smalltalk
 from app.agent.sources import format_sources
 from app.agent.verify import verify_answer
 from app.core.classes import ClassRegistry
@@ -117,6 +119,15 @@ async def answer_question(
         )  # fmt: skip
         await session.commit()
         return _reply(Outcome.REFUSED, _REFUSALS[verdict.event_type], "refusal", secret, usage)
+
+    # Greeting / thanks only: friendly fixed reply, no retrieval, no LLM, no ticket (D-87)
+    talk = classify_smalltalk(question)
+    if talk is not None:
+        template = messages.SMALLTALK_GREETING if talk == "greeting" else messages.SMALLTALK_THANKS
+        class_name = next(c.name for c in registry.classes if c.id == request.class_id)
+        trigger = settings.trigger_prefixes[0] if settings.trigger_prefixes else "/hoi"
+        text = template.format(class_name=class_name, trigger=trigger)
+        return _reply(Outcome.SMALLTALK, text, "smalltalk", secret, usage)
 
     # 10. Follow-up questions -> standalone question
     history = await load_history(

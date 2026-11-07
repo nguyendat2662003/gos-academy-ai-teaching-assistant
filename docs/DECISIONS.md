@@ -443,3 +443,10 @@ Cosine top-1 đo được trên 14 câu thật (8 tin mẫu HR + các tình hu�
 - `/demo`: gõ `@` mở danh sách thành viên (Trợ lý + các học viên), chọn bằng chuột, ↑/↓ + Enter/Tab; tên được nhắc hiện màu xanh. Tên hiển thị của bot trên trang lấy từ trigger bắt đầu bằng `@`.
 - Loại bỏ: nhận mention ở bất kỳ vị trí nào (dễ gọi nhầm khi học viên chỉ nhắc tới bot trong câu chuyện); bỏ hẳn `/hoi` (phải sửa script, test và tài liệu mà không thêm lợi ích).
 - Zalo thật: chưa xác minh mention của OA được gửi qua webhook dưới dạng nào; `ZaloGMFAdapter.parse` phải chuyển nó về cùng dạng văn bản (ghi trong stub).
+
+### D-87. Lời chào / cảm ơn gửi bot: chào lại, không chuyển giảng viên
+- Vấn đề: khi thử `/demo`, tin `@Trợ lý chào bạn` đi qua pipeline như một câu hỏi, không có căn cứ, nên bot báo "chưa tìm thấy căn cứ" và tạo ticket cho giảng viên. Học viên thấy bot cứng nhắc, còn giảng viên nhận ticket rác.
+- Chọn: sau guard, `app/agent/smalltalk.py` kiểm tra tin có **chỉ** gồm lời chào/cảm ơn (cộng các từ lịch sự như bạn, ạ, nhé, trợ lý) và ngắn (≤ 8 từ) hay không. Nếu đúng, bot gửi câu cố định trong `messages.py`: chào lại, nói mình là trợ lý của lớp nào và cách hỏi (`@Trợ lý` + câu hỏi); hoặc "không có gì" với lời cảm ơn. Không truy xuất, không gọi LLM, không tạo ticket, không lưu vào ngữ cảnh hội thoại.
+- Tất định, không dùng LLM để phân loại: so khớp từ sau khi bỏ dấu. Câu có thêm nội dung ("chào bạn, cho mình hỏi SUMIFS…") vẫn là câu hỏi thật và đi qua pipeline bình thường, nên không có nguy cơ nuốt mất câu hỏi.
+- Log: outcome mới `smalltalk`, outbox kind `smalltalk`. Thống kê đếm riêng, không tính vào "câu hỏi", để tỷ lệ trả lời/chuyển giảng viên không bị lệch. Cột outcome là chuỗi (`String(16)`), không cần migration.
+- Loại bỏ: để LLM tự trả lời lời chào (tốn token, và trái nguyên tắc chỉ trả lời từ tài liệu); bỏ qua im lặng (học viên tưởng bot hỏng).

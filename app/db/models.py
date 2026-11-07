@@ -74,6 +74,7 @@ class Outcome(StrEnum):
     DUPLICATE = "duplicate"
     RATE_LIMITED = "rate_limited"
     ERROR = "error"
+    SMALLTALK = "smalltalk"  # greeting / thanks to the bot: fixed reply, no LLM, no ticket (D-87)
 
 
 class HandoffReason(StrEnum):
@@ -277,7 +278,7 @@ class Outbox(Base):
     external_group_id: Mapped[str] = mapped_column(String(255))
     event_id: Mapped[str | None] = mapped_column(String(255))  # null for instructor messages
     reply_to: Mapped[str | None] = mapped_column(String(255))
-    kind: Mapped[str] = mapped_column(String(32))  # answer | handoff | refusal | notice | instructor
+    kind: Mapped[str] = mapped_column(String(32))  # answer|handoff|refusal|notice|instructor|smalltalk
     text: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = _now()
 
