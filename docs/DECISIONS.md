@@ -435,3 +435,11 @@ Cosine top-1 đo được trên 14 câu thật (8 tin mẫu HR + các tình hu�
 - Đơn giá OpenAI của các model đã chọn do người dùng điền tay từ trang giá chính thức. Ngày kiểm tra không ảnh hưởng đến cách tính chi phí, nên không bắt buộc.
 - Bỏ test bắt buộc `checked_at`. Trường vẫn còn: nếu điền thì trang admin hiển thị cạnh dòng chi phí; để trống thì không hiển thị gì.
 - Không đổi: giá không bao giờ hardcode trong code; model chưa có giá thì `cost_usd = null`, không tính 0.
+
+### D-86. Gọi bot bằng cách nhắc tên `@Trợ lý`; `/hoi` vẫn dùng được
+- Trong nhóm chat thật, học viên quen nhắc tên (`@`) người mình muốn hỏi hơn là gõ lệnh. `TRIGGER_PREFIXES` mặc định là `@Trợ lý,/hoi`: tin bắt đầu bằng một trong hai đều được xử lý, nên script và test cũ dùng `/hoi` không phải đổi.
+- Vẫn chỉ tính khi nhắc tên **ở đầu tin**, như quy tắc trigger trước giờ. Nhắc giữa câu ("cho em hỏi @Trợ lý …") hoặc nhắc một học viên khác thì bot bỏ qua, nên không gọi AI ngoài ý muốn.
+- So khớp không phân biệt hoa/thường và chuẩn hóa Unicode NFC (bàn phím khác có thể gửi "lý" dạng dấu tổ hợp). Sau tên được phép có dấu cách (kể cả no-break space), `,`, `:` hoặc `;`. Tên dính liền chữ cái ("@Trợ lýx") không tính.
+- `/demo`: gõ `@` mở danh sách thành viên (Trợ lý + các học viên), chọn bằng chuột, ↑/↓ + Enter/Tab; tên được nhắc hiện màu xanh. Tên hiển thị của bot trên trang lấy từ trigger bắt đầu bằng `@`.
+- Loại bỏ: nhận mention ở bất kỳ vị trí nào (dễ gọi nhầm khi học viên chỉ nhắc tới bot trong câu chuyện); bỏ hẳn `/hoi` (phải sửa script, test và tài liệu mà không thêm lợi ích).
+- Zalo thật: chưa xác minh mention của OA được gửi qua webhook dưới dạng nào; `ZaloGMFAdapter.parse` phải chuyển nó về cùng dạng văn bản (ghi trong stub).

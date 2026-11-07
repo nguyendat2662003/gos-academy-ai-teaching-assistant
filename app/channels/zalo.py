@@ -15,6 +15,9 @@ Technical side (to confirm on developers.zalo.me):
   whether the sender is the OA itself) → map it in `parse` to IncomingMessage.
 - The endpoint, payload, rate limits and error codes for sending a message to a group → `send_reply`.
 - Platform policies on bots in groups (allowed triggers, message frequency, content rules).
+- How a mention of the OA in a group message is delivered (plain "@name" text or separate mention data).
+  The mock treats a message that starts with "@Trợ lý" as the trigger (DECISIONS D-86); `parse` must map a
+  real mention of the OA to the same trigger text.
 
 Personal accounts and unofficial/reverse-engineered libraries must never be used
 (hard constraint 4, docs/TEST_REPORT.md §2).

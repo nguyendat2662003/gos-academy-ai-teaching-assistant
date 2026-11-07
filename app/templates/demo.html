@@ -85,7 +85,7 @@
   .bubble .meta { display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:12px; color:var(--muted); margin-top:6px; white-space:normal; }
   .quote { border-left:2px solid var(--blue); padding:2px 0 2px 8px; margin:2px 0 8px; font-size:13px; color:#5a6981; white-space:normal; }
   .quote b { display:block; color:var(--ink); font-weight:600; }
-  .quote span { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .quote > span { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .sources { border-top:1px dashed #d3d9e1; margin-top:8px; padding-top:6px; font-size:13px; color:#3d4a5c; }
   .kind { border-radius:999px; padding:0 7px; font-size:11px; font-weight:600; border:1px solid transparent; }
   .k-answer { background:#dcfce7; color:var(--ok); } .k-partial { background:#fef3c7; color:var(--warn); }
@@ -112,7 +112,14 @@
   .chips.open { display:flex; }
   .chips button { border:1px solid var(--mine-line); background:#fff; color:var(--blue); border-radius:999px; padding:3px 10px; font-size:13px; }
   .chips button:hover { background:var(--mine); }
-  .input { display:flex; align-items:flex-end; gap:8px; padding:8px 12px 10px; }
+  .input { display:flex; align-items:flex-end; gap:8px; padding:8px 12px 10px; position:relative; }
+  .at { color:var(--blue); font-weight:600; }
+  .mention-menu { position:absolute; left:12px; bottom:calc(100% + 4px); width:min(320px, calc(100% - 24px)); background:#fff;
+                  border:1px solid var(--line); border-radius:10px; box-shadow:0 8px 24px rgba(8,28,54,.16); padding:6px 0; z-index:3; }
+  .mention-menu .mh { padding:2px 12px 6px; font-size:12px; color:var(--muted); }
+  .mention-menu button { display:flex; align-items:center; gap:10px; width:100%; border:0; background:transparent; padding:6px 12px; text-align:left; }
+  .mention-menu button.on, .mention-menu button:hover { background:var(--hover); }
+  .mention-menu small { display:block; color:var(--muted); font-size:12px; }
   .input textarea { flex:1; border:0; outline:none; resize:none; min-height:38px; max-height:140px; padding:8px 4px; background:transparent; }
   .send { border:0; background:transparent; color:var(--blue); width:40px; height:38px; border-radius:6px; display:grid; place-items:center; }
   .send:hover { background:var(--active); }
@@ -211,7 +218,7 @@
         <svg viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg></button>
     </header>
     <div class="banner"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
-      <span>Gõ <b id="trigger-hint"></b> trước câu hỏi để gọi trợ giảng. Tin không có lệnh này bot sẽ bỏ qua (không gọi AI).</span></div>
+      <span id="trigger-hint"></span></div>
     <div id="msgs" class="msgs" aria-live="polite"></div>
     <div class="composer">
       <div class="tools">
@@ -220,14 +227,15 @@
         <button class="icon-btn" type="button" disabled title="Không dùng trong bản mô phỏng" aria-label="Đính kèm">
           <svg viewBox="0 0 24 24"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/></svg></button>
         <span class="sep"></span>
-        <button id="insert-trigger" class="icon-btn" type="button" title="Chèn lệnh gọi trợ giảng"><b id="trigger-btn"></b></button>
+        <button id="insert-trigger" class="icon-btn" type="button" title="Nhắc bot để hỏi" aria-label="Nhắc bot để hỏi"><b id="trigger-btn"></b></button>
         <button id="toggle-samples" class="icon-btn" type="button" title="Câu hỏi mẫu cho các tình huống thử nghiệm">
           <svg viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>Câu hỏi mẫu</button>
         <label>Gửi với tư cách <select id="sender"></select></label>
       </div>
       <div id="chips" class="chips"></div>
       <div class="input">
-        <textarea id="text" rows="1" maxlength="2000"></textarea>
+        <div id="mention-menu" class="mention-menu" role="listbox" aria-label="Nhắc thành viên" hidden></div>
+        <textarea id="text" rows="1" maxlength="2000" aria-autocomplete="list"></textarea>
         <button id="send" class="send" type="button" title="Gửi (Enter)" aria-label="Gửi">
           <svg viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
       </div>
@@ -262,14 +270,16 @@
 <script nonce="{{ nonce }}">
   const GROUPS = {{ groups|tojson }};
   const SAMPLES = {{ samples|tojson }};
-  const TRIGGER = {{ trigger|tojson }};
+  const TRIGGERS = {{ triggers|tojson }};
+  const MENTION = {{ mention|tojson }};          // e.g. "@Trợ lý": mentioning the bot is the trigger (D-86)
+  const TRIGGER = MENTION || TRIGGERS[0];
+  const BOT = {{ bot_name|tojson }};
   const PEOPLE = [
     { id: "hv_an", name: "Học viên An", color: "#7c3aed" },
     { id: "hv_binh", name: "Học viên Bình", color: "#0891b2" },
     { id: "hv_chi", name: "Học viên Chi", color: "#db2777" },
     { id: "bot_khac", name: "Một tài khoản bot khác", color: "#64748b", bot: true },  // loop protection demo
   ];
-  const BOT = "Trợ giảng GOS";
   const KIND = { answer: "Trả lời có nguồn", partial: "Trả lời một phần", handoff: "Chuyển giảng viên",
                  refusal: "Từ chối", error: "Lỗi", notice: "Thông báo", instructor: "Giảng viên trả lời" };
   const SOURCES = "📚 Nguồn: ";
@@ -347,11 +357,27 @@
       case "queued": return ["✓✓ Đã nhận", ""];
       case "duplicate": return ["Sự kiện trùng: không xử lý lại", "warn"];
       case "rate_limited": return ["Bị giới hạn tần suất", "warn"];
-      case "ignored": return [{ no_trigger: "Đã gửi · bot không xử lý (thiếu " + TRIGGER + ")", from_bot: "Bỏ qua: tin do bot gửi (chống vòng lặp)",
+      case "ignored": return [{ no_trigger: "Đã gửi · bot không xử lý (tin không bắt đầu bằng " + TRIGGER + ")", from_bot: "Bỏ qua: tin do bot gửi (chống vòng lặp)",
         class_disabled: "Bỏ qua: bot đang tắt ở lớp này", empty_question: "Bỏ qua: chưa có câu hỏi sau lệnh",
         unmapped_group: "Bỏ qua: nhóm chưa gắn lớp" }[r.reason] || "Bỏ qua (" + r.reason + ")", "warn"];
       default: return [m.status === "failed" ? "Không gửi được" : "Đã gửi", m.status === "failed" ? "bad" : ""];
     }
+  }
+  // "@Trợ lý" / "@Học viên An" shown in blue like a real mention. Text nodes only: never HTML.
+  const fold = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+  const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  function withMentions(text) {
+    const names = [BOT].concat(PEOPLE.filter((p) => !p.bot).map((p) => p.name)).sort((a, b) => b.length - a.length);
+    const alts = names.map((n) => "@" + escRe(n)).concat(TRIGGERS.filter((t) => !t.startsWith("@")).map((t) => "^" + escRe(t)));
+    const re = new RegExp("(" + alts.join("|") + ")", "giu");
+    const src = text.normalize("NFC"), parts = [];
+    let last = 0;
+    for (const m of src.matchAll(re)) {
+      parts.push(src.slice(last, m.index), h("span", { class: "at" }, m[0]));
+      last = m.index + m[0].length;
+    }
+    parts.push(src.slice(last));
+    return parts;
   }
   function findUserMsg(msgId) {
     for (const list of Object.values(state.users)) for (const m of list) if (m.msg_id === msgId) return m;
@@ -363,7 +389,7 @@
     const quoted = m.reply_to ? findUserMsg(m.reply_to) : null;
     return h("div", { class: "bubble" },
       h("div", { class: "who" }, BOT),
-      quoted ? h("div", { class: "quote" }, h("b", {}, person(quoted.sender).name), h("span", {}, quoted.text)) : "",
+      quoted ? h("div", { class: "quote" }, h("b", {}, person(quoted.sender).name), h("span", {}, withMentions(quoted.text))) : "",
       body,
       cut > 0 ? h("div", { class: "sources" }, m.text.slice(cut)) : "",
       h("div", { class: "meta" }, hhmm(m.at), h("span", { class: "kind k-" + m.kind }, KIND[m.kind] || m.kind)));
@@ -375,7 +401,7 @@
     $("head-title").textContent = "Lớp " + g.class_name;
     $("head-sub").textContent = "Nhóm · " + (PEOPLE.length) + " thành viên · " + g.group_id;
     $("head-class").textContent = g.class_id;
-    $("text").placeholder = "Nhập " + TRIGGER + " + câu hỏi, tin nhắn tới Lớp " + g.class_name;
+    $("text").placeholder = (MENTION ? "Gõ @ để nhắc " + BOT : "Nhập " + TRIGGER + " + câu hỏi") + ", tin nhắn tới Lớp " + g.class_name;
     const items = timeline(g.group_id), out = [];
     let prev = null;
     for (const m of items) {
@@ -387,7 +413,7 @@
         out.push(h("div", { class: "row" + (cont ? " cont" : "") }, cont ? h("div", { class: "slot" }) : avatar("bot", "AI", null, true), botBubble(m)));
       } else {
         const p = person(m.sender), mine = m.sender === state.sender;
-        const bubble = h("div", { class: "bubble" }, mine || cont ? "" : h("div", { class: "who" }, p.name), m.text,
+        const bubble = h("div", { class: "bubble" }, mine || cont ? "" : h("div", { class: "who" }, p.name), withMentions(m.text),
                          h("div", { class: "meta" }, hhmm(m.at)));
         out.push(h("div", { class: "row" + (mine ? " mine" : "") + (cont ? " cont" : "") },
           mine ? "" : (cont ? h("div", { class: "slot" }) : avatar("", initials(p.name), p.color, true)), bubble));
@@ -416,7 +442,11 @@
 
   // ---------------------------------------------------------------- composer
   function renderComposer() {
-    $("trigger-hint").textContent = TRIGGER; $("trigger-btn").textContent = TRIGGER;
+    const others = TRIGGERS.filter((t) => t !== TRIGGER);
+    $("trigger-hint").replaceChildren(MENTION ? "Nhắc " : "Gõ ", h("b", { class: "at" }, TRIGGER),
+      MENTION ? " ở đầu tin (gõ @ để chọn) để hỏi bot." : " trước câu hỏi để hỏi bot.",
+      " Tin không có lệnh này bot sẽ bỏ qua (không gọi AI)." + (others.length ? " Lệnh " + others.join(", ") + " vẫn dùng được." : ""));
+    $("trigger-btn").textContent = MENTION ? "@" : TRIGGER;
     $("sender").replaceChildren(...PEOPLE.map((p) => {
       const o = h("option", { value: p.id }, p.name);
       o.selected = p.id === state.sender;
@@ -538,10 +568,58 @@
   $("login-form").addEventListener("submit", (ev) => { ev.preventDefault(); login($("login-key").value.trim()); });
   $("logout").addEventListener("click", () => { $("login-key").value = ""; $("login-err").textContent = ""; $("login").hidden = false; $("login-key").focus(); });
   $("send").addEventListener("click", send);
-  $("text").addEventListener("input", grow);
-  $("text").addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); send(); } });
+  // ---------------------------------------------------------------- @mention menu (like a chat app)
+  let menu = { items: [], sel: 0, start: -1 };
+  function mentionQuery() {
+    const t = $("text"), before = t.value.slice(0, t.selectionStart);
+    const m = /(^|\s)@([^@\n]{0,20})$/.exec(before);
+    return m ? { start: before.length - m[2].length - 1, q: m[2] } : null;
+  }
+  function updateMenu() {
+    const found = MENTION ? mentionQuery() : null;
+    const all = [{ name: BOT, note: "Bot hỏi đáp của lớp · nhắc ở đầu tin để hỏi", bot: true }]
+      .concat(PEOPLE.filter((p) => !p.bot).map((p) => ({ name: p.name, note: "Thành viên nhóm", color: p.color })));
+    const q = found ? fold(found.q) : "";
+    const items = found ? all.filter((it) => fold(it.name).startsWith(q) || fold(it.name).includes(" " + q)) : [];
+    if (!found || !items.length) { $("mention-menu").hidden = true; menu.items = []; return; }
+    menu = { items, sel: Math.min(menu.sel, items.length - 1), start: found.start };
+    $("mention-menu").replaceChildren(h("div", { class: "mh" }, "Nhắc tên"), ...items.map((it, i) =>
+      h("button", { type: "button", role: "option", class: i === menu.sel ? "on" : "", "aria-selected": i === menu.sel ? "true" : "false",
+                    onmousedown: (ev) => { ev.preventDefault(); pickMention(i); } },
+        it.bot ? avatar("bot", "AI", null, true) : avatar("", initials(it.name), it.color, true),
+        h("div", {}, it.name, h("small", {}, it.note)))));
+    $("mention-menu").hidden = false;
+  }
+  function pickMention(i) {
+    const it = menu.items[i], t = $("text");
+    if (!it) return;
+    const tail = t.value.slice(t.selectionStart).replace(/^\S*/, "").trimStart();
+    t.value = t.value.slice(0, menu.start) + "@" + it.name + " " + tail;
+    const caret = menu.start + it.name.length + 2;
+    t.setSelectionRange(caret, caret); t.focus();
+    $("mention-menu").hidden = true; menu.items = []; grow();
+  }
+  $("text").addEventListener("input", () => { grow(); menu.sel = 0; updateMenu(); });
+  $("text").addEventListener("click", updateMenu);
+  $("text").addEventListener("blur", () => setTimeout(() => { $("mention-menu").hidden = true; }, 120));
+  $("text").addEventListener("keydown", (ev) => {
+    if (!$("mention-menu").hidden && menu.items.length) {
+      if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+        ev.preventDefault(); menu.sel = (menu.sel + (ev.key === "ArrowDown" ? 1 : -1) + menu.items.length) % menu.items.length; updateMenu(); return; }
+      if (ev.key === "Enter" || ev.key === "Tab") { ev.preventDefault(); pickMention(menu.sel); return; }
+      if (ev.key === "Escape") { ev.preventDefault(); $("mention-menu").hidden = true; return; }
+    }
+    if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); send(); }
+  });
   $("insert-trigger").addEventListener("click", () => {
-    const t = $("text"); if (!t.value.startsWith(TRIGGER)) t.value = TRIGGER + " " + t.value.trimStart(); t.focus(); grow(); });
+    const t = $("text");
+    if (MENTION) {  // like tapping "@" in a chat app: open the member list at the start of the message
+      if (t.value.startsWith(MENTION)) { t.focus(); return; }
+      if (!t.value.startsWith("@")) t.value = "@" + (t.value.trim() ? " " + t.value.trimStart() : "");
+      t.focus(); t.setSelectionRange(1, 1); menu.sel = 0; updateMenu(); grow(); return;
+    }
+    if (!t.value.startsWith(TRIGGER)) t.value = TRIGGER + " " + t.value.trimStart();
+    t.focus(); grow(); });
   $("toggle-samples").addEventListener("click", () => $("chips").classList.toggle("open"));
   $("sender").addEventListener("change", (ev) => { state.sender = ev.target.value; save(); renderChat(); });
   $("switch").addEventListener("change", (ev) => openGroup(ev.target.value));

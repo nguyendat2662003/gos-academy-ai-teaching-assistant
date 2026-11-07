@@ -225,6 +225,7 @@ async def test_demo_shows_events_replays_them_and_simulates_a_bot(client, fake_q
 
     page = (await client.get("/demo")).text
     assert "MÔ PHỎNG" in page and "/webhooks/mock" in page and '"/hoi"' in page
+    assert 'const MENTION = "@Tr\\u1ee3 l\\u00fd"' in page  # the "@" menu offers the bot (D-86)
     await fake_queue.run_all()
     rows = (await client.get("/demo/api/messages", headers=ADMIN)).json()
     assert rows and all(r["created_at"] for r in rows)

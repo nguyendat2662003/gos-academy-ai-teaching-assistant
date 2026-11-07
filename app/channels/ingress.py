@@ -5,6 +5,7 @@ Kept free of HTTP concerns so it can be reused by every channel adapter.
 
 import logging
 import time
+import unicodedata
 from dataclasses import dataclass
 
 from redis.asyncio import Redis
@@ -32,17 +33,28 @@ class IngressResult:
     class_id: str | None = None
 
 
-def extract_question(text: str, prefixes: list[str]) -> str | None:
-    """Return the question after a trigger prefix ("/hoi ..."), or None if the message has no trigger.
+# Allowed right after the trigger, as in "@Trợ lý, cho em hỏi ..." or "@Trợ lý: ...".
+TRIGGER_SEPARATORS = ",:;"
 
-    The prefix must be followed by whitespace or end the message, so "/hoian" is not a trigger.
+
+def extract_question(text: str, prefixes: list[str]) -> str | None:
+    """Return the question after a trigger at the start of the message ("@Trợ lý ...", "/hoi ..."), else None.
+
+    Case-insensitive and Unicode-normalised (NFC): a decomposed "lý" from another keyboard still matches.
+    The trigger must not run into a letter or digit: "/hoian" and "@Trợ lýx" are not triggers.
     """
-    stripped = text.strip()
-    lowered = stripped.lower()
+    stripped = unicodedata.normalize("NFC", text).strip()
     for prefix in prefixes:
-        p = prefix.lower()
-        if lowered.startswith(p) and (len(stripped) == len(p) or stripped[len(p)].isspace()):
-            return stripped[len(p) :].strip()
+        p = unicodedata.normalize("NFC", prefix.strip())
+        if not p or stripped[: len(p)].casefold() != p.casefold():
+            continue
+        rest = stripped[len(p) :]
+        if rest and (rest[0].isalnum() or rest[0] == "_"):
+            continue
+        rest = rest.strip()
+        if rest[:1] in tuple(TRIGGER_SEPARATORS):
+            rest = rest[1:].strip()
+        return rest
     return None
 
 

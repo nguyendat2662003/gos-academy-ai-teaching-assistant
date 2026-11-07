@@ -98,10 +98,17 @@ class OutboxOut(BaseModel):
 
 @router.get("", response_class=HTMLResponse, include_in_schema=False)
 async def demo_page(request: Request) -> HTMLResponse:
-    trigger = (get_settings().trigger_prefixes or ["/hoi"])[0]
-    return render(
-        request, "demo.html", {"groups": demo_groups(), "samples": SAMPLE_QUESTIONS, "trigger": trigger}
-    )
+    triggers = get_settings().trigger_prefixes or ["/hoi"]
+    # A trigger starting with "@" is the bot's mention: the page offers it when the student types "@" (D-86).
+    mention = next((t for t in triggers if t.startswith("@") and len(t) > 1), None)
+    context = {
+        "groups": demo_groups(),
+        "samples": SAMPLE_QUESTIONS,
+        "triggers": triggers,
+        "mention": mention,
+        "bot_name": mention[1:] if mention else "Trợ lý",
+    }
+    return render(request, "demo.html", context)
 
 
 def _check_group(group_id: object) -> None:

@@ -21,10 +21,26 @@ ADMIN = {"X-Admin-Key": "test-admin-key"}
         ("/hoian ơi", None),
         ("RAG là gì? /hoi", None),
         ("chào cả lớp", None),
+        # mentioning the bot (D-86)
+        ("@Trợ lý RAG là gì?", "RAG là gì?"),
+        ("@trợ LÝ, cho em hỏi RAG là gì?", "cho em hỏi RAG là gì?"),
+        ("@Trợ lý: RAG là gì?", "RAG là gì?"),
+        ("@Trợ lý\u00a0RAG là gì?", "RAG là gì?"),  # chat apps often put a no-break space after a mention
+        ("@Tro\u031b\u0323 ly\u0301 RAG là gì?", "RAG là gì?"),  # decomposed accents (NFD), another keyboard
+        ("@Trợ lýx RAG", None),
+        ("@Học viên An RAG là gì?", None),  # mentioning a classmate is not a question to the bot
+        ("Cho em hỏi @Trợ lý RAG là gì?", None),  # the mention must open the message
     ],
 )
 def test_extract_question(text: str, expected: str | None) -> None:
-    assert extract_question(text, ["/hoi"]) == expected
+    assert extract_question(text, ["@Trợ lý", "/hoi"]) == expected
+
+
+def test_default_triggers_are_the_mention_and_hoi(monkeypatch) -> None:
+    from app.core.config import Settings
+
+    monkeypatch.delenv("TRIGGER_PREFIXES", raising=False)
+    assert Settings(_env_file=None).trigger_prefixes == ["@Trợ lý", "/hoi"]  # type: ignore[call-arg]
 
 
 @pytest.mark.db
@@ -36,6 +52,13 @@ async def test_valid_message_is_queued_with_server_side_class_and_hashed_user(cl
     assert job.question == "Lỗi 401 là gì?"
     assert job.user_hash == hash_user_id("user_001", "test-salt")
     assert "user_001" not in job.model_dump_json() and "Nguyen" not in job.model_dump_json()
+
+
+@pytest.mark.db
+async def test_mentioning_the_bot_is_a_trigger(client, fake_queue) -> None:
+    resp = await send(client, payload(text="@Trợ lý, Lỗi 401 là gì?", group_id=AUTO_GROUP))
+    assert resp.json()["status"] == "queued"
+    assert fake_queue.messages[0].question == "Lỗi 401 là gì?"
 
 
 @pytest.mark.db

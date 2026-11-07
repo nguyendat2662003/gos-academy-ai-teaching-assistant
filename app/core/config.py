@@ -45,7 +45,8 @@ class Settings(BaseSettings):
     embedding_dim: int = Field(default=768, gt=0, le=4000)
 
     guard_llm_enabled: bool = False
-    trigger_prefixes: Annotated[list[str], NoDecode] = ["/hoi"]
+    # Mentioning the bot at the start of a message ("@Trợ lý ...") or the older "/hoi" command (D-86).
+    trigger_prefixes: Annotated[list[str], NoDecode] = ["@Trợ lý", "/hoi"]
     rate_limit_user_per_min: int = Field(default=5, gt=0)
     rate_limit_class_per_min: int = Field(default=30, gt=0)
     retrieval_top_k: int = Field(default=5, gt=0, le=50)

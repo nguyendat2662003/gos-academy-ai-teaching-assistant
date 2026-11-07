@@ -26,7 +26,7 @@ Phần lớn token đầu vào là các đoạn tài liệu (top-5 chunk) và sy
 ## 2. Công thức ước tính theo tháng
 
 Gọi:
-- `Q` = số câu hỏi `/hoi` mỗi tháng;
+- `Q` = số câu hỏi gửi bot (`@Trợ lý` / `/hoi`) mỗi tháng;
 - `a` = tỷ lệ câu cần gọi LLM (trả lời, một phần hoặc `low_confidence`);
 - `P_in`, `P_out`, `P_emb` = đơn giá USD cho 1 triệu token, lấy từ `pricing.yaml`.
 

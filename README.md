@@ -9,15 +9,15 @@ không đủ căn cứ.
 - Kiểm thử, kết quả 7 tình huống, đánh giá RAG: [docs/TEST_REPORT.md](docs/TEST_REPORT.md)
   ([SCENARIOS_RESULTS](docs/SCENARIOS_RESULTS.md), [EVAL_RESULTS](docs/EVAL_RESULTS.md))
 - Chi phí vận hành & điều kiện tích hợp Zalo thật: [docs/COST_AND_ZALO.md](docs/COST_AND_ZALO.md)
-- Quyết định kỹ thuật (D-01…D-85): [docs/DECISIONS.md](docs/DECISIONS.md)
+- Quyết định kỹ thuật (D-01…D-86): [docs/DECISIONS.md](docs/DECISIONS.md)
 
-> Trạng thái: **hoàn thành MVP (Phase 0–7)**. 226 test offline xanh; trên stack thật với OpenAI: 7/7 tình
+> Trạng thái: **hoàn thành MVP (Phase 0–7)**. 236 test offline xanh; trên stack thật với OpenAI: 7/7 tình
 > huống đạt, đánh giá 40 câu golden quyết định đúng 40/40, rò rỉ chéo lớp 0. Tích hợp Zalo thật mới ở mức khung
 > (cần quyền OA + GMF).
 
 ## Bot xử lý một câu hỏi thế nào
 
-`/hoi …` → che secret → guard (injection / đòi bí mật / lớp khác → từ chối) → lịch sử (cùng lớp, có TTL)
+`@Trợ lý …` (hoặc `/hoi …`) → che secret → guard (injection / đòi bí mật / lớp khác → từ chối) → lịch sử (cùng lớp, có TTL)
 → viết lại câu hỏi nối tiếp → truy xuất hybrid (chỉ lớp đó + COMMON) → chủ đề nhạy cảm không có căn cứ → chuyển
 giảng viên → điểm < `RETRIEVAL_MIN_SCORE` → chuyển giảng viên (không gọi LLM) → LLM trả JSON (timeout + retry)
 → kiểm tra (JSON, `answerable`, trích dẫn thuộc tập vừa truy xuất) → ghép câu trả lời + nguồn từ metadata.
@@ -159,7 +159,7 @@ curl.exe -X POST http://127.0.0.1:8000/admin/classes/AUTO-N8N-01/toggle `
 |---|---|
 | `401` | thiếu header, sai chữ ký, timestamp lệch > 300 s (ghi `security_events`) |
 | `200 duplicate` | `event_id` đã nhận (kể cả gửi đồng thời) |
-| `200 ignored` | tin của bot, không bắt đầu bằng `/hoi`, câu hỏi rỗng, nhóm không thuộc lớp nào, lớp đang tắt bot, loại event khác |
+| `200 ignored` | tin của bot, không bắt đầu bằng `@Trợ lý` hoặc `/hoi`, câu hỏi rỗng, nhóm không thuộc lớp nào, lớp đang tắt bot, loại event khác |
 | `200 rate_limited` | vượt `RATE_LIMIT_USER_PER_MIN` / `RATE_LIMIT_CLASS_PER_MIN` (thông báo 1 lần/phút) |
 | `200 queued` | đã đưa vào hàng đợi worker |
 
@@ -209,6 +209,9 @@ Rồi `docker compose up -d` (api đọc lại `.env`; sai mã lớp thì api kh
 Chỉ bật khi `APP_ENV=dev`. Mở **http://127.0.0.1:8000/demo** → nhập `ADMIN_API_KEY` (khóa giảng viên không mở
 được demo). Giao diện mô phỏng một ứng dụng chat nhóm (D-84), ghi rõ là **mô phỏng**:
 
+- **Hỏi bot bằng cách nhắc tên**: gõ `@` → chọn **Trợ lý** trong danh sách thành viên (như nhắc tên trong ứng
+  dụng chat), rồi gõ câu hỏi: `@Trợ lý Bài tập nộp khi nào?`. Nhắc tên phải ở đầu tin; nhắc một học viên khác
+  hoặc tin không nhắc bot thì bot bỏ qua. Lệnh `/hoi` vẫn dùng được (D-86).
 - **Danh sách hội thoại** bên trái: mỗi nhóm trong `classes.yaml` là một hội thoại, có tin cuối và số tin chưa đọc.
 - **Khung chat**: bong bóng tin, tin của bot trích dẫn tin được trả lời, phần `📚 Nguồn` tách riêng, nhãn loại
   phản hồi (trả lời có nguồn / chuyển giảng viên / từ chối…), trạng thái "Đã nhận" hoặc lý do bot bỏ qua.

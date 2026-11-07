@@ -80,7 +80,7 @@ sequenceDiagram
         WH-->>HV: 200 duplicate
     else mới
         WH->>DB: group_id → class_id (server quyết định)
-        WH->>WH: tin bot? trigger /hoi? lớp bật? rate limit (Redis)?
+        WH->>WH: tin bot? mở đầu bằng @Trợ lý hoặc /hoi? lớp bật? rate limit (Redis)?
         WH->>WH: che secret trong câu hỏi
         WH->>R: enqueue (job id = event)
         WH-->>HV: 200 queued
@@ -135,7 +135,7 @@ Có hai lớp phân quyền độc lập: **dữ liệu của bot** được cá
 
 | Vai trò | Định danh | Được làm | Không được làm |
 |---|---|---|---|
-| **Học viên** | Không có khóa. Tài khoản chat → `user_hash` (HMAC), lớp suy ra từ `group_id` | Hỏi bot bằng `/hoi` trong nhóm của lớp mình; nhận câu trả lời của bot và của giảng viên | Chọn lớp; đọc tài liệu/ticket/thống kê; gọi bất kỳ API quản trị nào |
+| **Học viên** | Không có khóa. Tài khoản chat → `user_hash` (HMAC), lớp suy ra từ `group_id` | Hỏi bot bằng cách nhắc `@Trợ lý` (hoặc `/hoi`) ở đầu tin trong nhóm của lớp mình; nhận câu trả lời của bot và của giảng viên | Chọn lớp; đọc tài liệu/ticket/thống kê; gọi bất kỳ API quản trị nào |
 | **Giảng viên** | Khóa riêng của lớp trong `INSTRUCTOR_API_KEYS` (gửi qua `X-Admin-Key`) | Xem, trả lời, gửi vào nhóm, duyệt FAQ ticket **của lớp mình**; xem tài liệu lớp mình + COMMON; tải lên, xóa, đánh lại chỉ mục tài liệu **chỉ thuộc lớp mình**; xem thống kê lớp mình | Ticket/tài liệu lớp khác (trả **404**, không lộ sự tồn tại); lọc theo lớp khác (403); sửa tài liệu dùng chung COMMON; bật/tắt bot; xem sự kiện bảo mật; dùng `/demo` |
 | **Quản trị** | `ADMIN_API_KEY` | Mọi lớp; bật/tắt bot; sự kiện bảo mật; tài liệu COMMON; trang `/demo` | — |
 | **Hệ thống gọi `/api/ask`** | `ASK_API_KEY` (`X-API-Key`) | Hỏi đáp server-to-server, truyền `class_id` đã tự xác thực (D-57) | Mọi API quản trị |
