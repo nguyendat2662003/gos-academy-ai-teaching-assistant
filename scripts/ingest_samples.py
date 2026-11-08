@@ -3,7 +3,11 @@ skipped). The folder name is the upload scope: a class id, or COMMON for files m
 
 Uses EMBEDDING_PROVIDER from the environment. Runs automatically in the one-shot `migrate` service on every
 `docker compose up` (unchanged content is skipped by hash, so only the first run embeds; D-82). Manually:
-  docker compose exec api python scripts/ingest_samples.py [--include-derived] [--force]
+  docker compose exec api python scripts/ingest_samples.py [--include-derived] [--force] [--restore-samples]
+
+Changes made on the admin page win over these copies: a source replaced by an upload (same file name or
+document code) or deleted there is left alone ("kept"), otherwise every `up` would bring the old copy back.
+`--restore-samples` indexes the copies anyway (go back to the bundled material).
 
 Prints one line per (file, scope), then per-class totals of ACTIVE chunks. Exit code 1 if any file was refused
 or any scope failed to index (e.g. wrong embedding key), so `migrate` fails loudly instead of starting the bot
@@ -22,8 +26,8 @@ from sqlalchemy import func, select  # noqa: E402
 from app.core.classes import get_registry  # noqa: E402
 from app.db.models import Chunk, Document, DocumentStatus  # noqa: E402
 from app.db.session import get_engine, get_sessionmaker  # noqa: E402
-from app.ingestion.indexer import IngestError, index_file  # noqa: E402
-from app.ingestion.parsers import SUPPORTED_SUFFIXES  # noqa: E402
+from app.ingestion.indexer import IngestError, bundled_copy_skip_reason, index_file  # noqa: E402
+from app.ingestion.parsers import SUPPORTED_SUFFIXES, parse_file  # noqa: E402
 from app.providers.registry import get_embedding_provider  # noqa: E402
 
 ROOTS = {"samples": Path("data/samples"), "derived": Path("data/derived")}
@@ -47,6 +51,11 @@ async def main(argv: list[str] | None = None) -> int:
         "--include-derived", action="store_true", help="also index data/derived (duplicates!)"
     )
     parser.add_argument("--force", action="store_true", help="re-embed even unchanged content")
+    parser.add_argument(
+        "--restore-samples",
+        action="store_true",
+        help="index the bundled copies even over newer uploads or deletions made on the admin page",
+    )
     args = parser.parse_args(argv)
 
     registry = get_registry()
@@ -59,10 +68,22 @@ async def main(argv: list[str] | None = None) -> int:
     failures = 0
     async with get_sessionmaker()() as session:
         for scope, path in discover(args.include_derived):
+            data = path.read_bytes()
+            if not args.restore_samples:
+                try:
+                    doc_code = parse_file(path).doc_code
+                except Exception:  # unreadable file: index_file below reports it
+                    doc_code = None
+                reason = await bundled_copy_skip_reason(
+                    session, data=data, filename=path.name, origin_scope=scope, doc_code=doc_code
+                )
+                if reason:
+                    print(f"{'kept':<10} {path.name:<48} -> {scope:<12} {reason}")
+                    continue
             try:
                 report = await index_file(
                     session,
-                    data=path.read_bytes(),
+                    data=data,
                     filename=path.name,
                     origin_scope=scope,
                     embedder=embedder,

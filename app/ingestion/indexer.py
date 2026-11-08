@@ -213,6 +213,37 @@ async def delete_document(session: AsyncSession, document_id: int) -> bool:
     return True
 
 
+async def bundled_copy_skip_reason(
+    session: AsyncSession, *, data: bytes, filename: str, origin_scope: str, doc_code: str | None
+) -> str | None:
+    """Why a bundled copy (data/samples, indexed on each `docker compose up`) must NOT be indexed, or None.
+
+    What staff changed on the admin page wins over the copy in the repo:
+    - an active version of the same source (same file name or document code) holds another file: it was
+      replaced by an upload, so indexing the copy would bring the old content back;
+    - the copy itself was deleted on the admin page (and nothing replaced it): it stays deleted.
+    Otherwise None: first install, unchanged content (skipped by hash), new embedding model (re-embed)."""
+    copy_id = hashlib.sha256(data).hexdigest()  # stored originals are named by this hash (store_original)
+    rows = await session.execute(
+        select(Document)
+        .where(Document.origin_scope == origin_scope, _same_source(filename, doc_code))
+        .order_by(Document.id)
+    )
+    docs = list(rows.scalars())
+
+    def is_copy(d: Document) -> bool | None:  # None: unknown (indexed before originals were stored)
+        return None if not d.storage_path else Path(d.storage_path).stem == copy_id
+
+    uploaded = [d for d in docs if d.status == DocumentStatus.ACTIVE and is_copy(d) is False]
+    if uploaded:
+        last = uploaded[-1]
+        return f"đã có bản tải lên mới hơn ({last.filename} v{last.version}), giữ bản đó"
+    active = any(d.status == DocumentStatus.ACTIVE for d in docs)
+    if not active and any(d.status == DocumentStatus.DELETED and is_copy(d) for d in docs):
+        return "đã bị xóa trên trang quản trị, không nạp lại"
+    return None
+
+
 async def reindex_document(
     session: AsyncSession, document_id: int, *, embedder: EmbeddingProvider, registry: ClassRegistry
 ) -> IngestReport:

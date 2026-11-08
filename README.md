@@ -60,6 +60,9 @@ Service one-shot `migrate` tự chạy mỗi lần `up`: migration, đồng bộ
 `data/samples`** (D-82). Nội dung không đổi được bỏ qua theo hash, nên chỉ lần đầu mới gọi API embedding. Nếu ingest
 lỗi (thường do key/model embedding sai trong `.env`) thì `migrate` thoát với lỗi và api/worker không khởi động:
 xem `docker compose logs migrate`, sửa `.env` rồi `docker compose up -d`.
+Thay đổi làm trên trang quản trị được giữ: file mẫu đã bị thay bằng bản tải lên (cùng tên file hoặc cùng mã tài liệu)
+hoặc đã bị xóa ở đó thì `migrate` bỏ qua (dòng `kept` trong log), không nạp lại bản cũ. Muốn quay về học liệu mẫu:
+`docker compose exec api python scripts/ingest_samples.py --restore-samples`.
 Chạy lại thủ công nếu cần:
 
 ```powershell

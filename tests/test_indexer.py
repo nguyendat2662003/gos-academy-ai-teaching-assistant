@@ -279,6 +279,67 @@ async def test_uploaded_filename_cannot_escape_storage(client) -> None:
 # ------------------------------------------------------------------ scripts/ingest_samples.py
 
 
+async def test_startup_ingest_keeps_what_was_changed_on_the_admin_page(
+    clean_state, db_session, monkeypatch, capsys
+) -> None:
+    """`migrate` re-runs the sample ingest on every `docker compose up`: it must not bring back a sample that
+    an instructor replaced (same file name, or another name with the same document code) or deleted."""
+    from scripts import ingest_samples
+
+    monkeypatch.setattr(
+        ingest_samples, "get_embedding_provider", lambda: FakeEmbeddingProvider("fake-embedding", 768)
+    )
+    gs_sample = SAMPLES["GS-KPI-01"].name
+
+    async def gs_text() -> str:
+        """Active text of the GS class's own material (the shared FAQ file also mentions SUMIFS)."""
+        rows = await db_session.execute(
+            select(Chunk.content)
+            .join(Document, Document.id == Chunk.document_id)
+            .where(Document.status == "active", Document.origin_scope == "GS-KPI-01")
+        )
+        return " ".join(rows.scalars())
+
+    assert await ingest_samples.main([]) == 0
+    assert "SUMIFS" in await gs_text()
+
+    # 1. replaced by an upload with the same file name -> kept on the next `up`
+    upload = make_docx([("GS-01  Bản cập nhật", "Nội dung giảng viên vừa tải lên.")])
+    await ingest(db_session, FakeEmbeddingProvider("fake-embedding", 768), upload, gs_sample, "GS-KPI-01")
+    capsys.readouterr()
+    assert await ingest_samples.main([]) == 0
+    assert "kept" in capsys.readouterr().out
+    text = await gs_text()
+    assert "giảng viên vừa tải lên" in text and "SUMIFS" not in text
+
+    # 2. --restore-samples goes back to the bundled copy
+    assert await ingest_samples.main(["--restore-samples"]) == 0
+    assert "SUMIFS" in await gs_text()
+
+    # 3. replaced under another file name with the same document code -> kept as well
+    doc = DocxWriter()
+    doc.add_paragraph("Mã tài liệu: DOC-GS-01")
+    doc.add_heading("GS-01  Bản 2027", level=1)
+    doc.add_paragraph("Giáo trình năm 2027.")
+    buf = io.BytesIO()
+    doc.save(buf)
+    await ingest(
+        db_session, FakeEmbeddingProvider("fake-embedding", 768), buf.getvalue(), "gt_2027.docx", "GS-KPI-01"
+    )
+    assert await ingest_samples.main([]) == 0
+    text = await gs_text()
+    assert "Giáo trình năm 2027" in text and "SUMIFS" not in text
+
+    # 4. deleted on the admin page -> not re-created
+    await ingest_samples.main(["--restore-samples"])
+    sample_doc = await db_session.scalar(
+        select(Document).where(Document.filename == gs_sample, Document.status == "active")
+    )
+    assert await indexer.delete_document(db_session, sample_doc.id)
+    assert await ingest_samples.main([]) == 0
+    assert "SUMIFS" not in await gs_text()
+
+
 async def test_ingest_samples_script_is_idempotent_and_fails_loudly(
     clean_state, db_session, monkeypatch, capsys
 ) -> None:
