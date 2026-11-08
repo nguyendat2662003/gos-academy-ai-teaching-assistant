@@ -162,6 +162,13 @@ async def test_admin_page_is_a_static_shell_with_csp(client) -> None:
         assert secret not in resp.text
 
 
+async def test_admin_page_has_the_material_section(client) -> None:
+    page = (await client.get("/admin/ui")).text
+    assert 'id="docs"' in page and 'id="u-file"' in page and "/admin/documents" in page
+    assert '<option value="COMMON">' in page  # admin may upload a file mixing several scopes
+    assert "FAQ đã duyệt" in page and "/admin/faqs" in page
+
+
 async def test_demo_is_dev_only(client) -> None:
     assert get_settings().app_env == "test"
     assert (await client.get("/demo")).status_code == 404

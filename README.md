@@ -109,7 +109,12 @@ $env:PYTHONIOENCODING="utf-8"
 .\.venv\Scripts\python scripts/derive_samples.py   # sinh lại data/derived/ (cần Word hoặc LibreOffice)
 ```
 
-### API tài liệu (header `X-Admin-Key`)
+### Tài liệu: trang quản trị và API (header `X-Admin-Key`)
+
+Trên **http://127.0.0.1:8000/admin/ui**, mục "Tài liệu học liệu" (hoặc nút tài liệu ở thanh trái của `/demo`):
+chọn file + lớp → **Tải lên & nạp**, trang báo kết quả từng phạm vi (phiên bản mới, không đổi, file bị thay, số FAQ cần
+xem lại, lỗi 422 kèm lý do). Danh sách lọc theo lớp và trạng thái; **Đánh lại chỉ mục** và **Xóa** (bấm hai lần) chỉ
+hiện với tài liệu mà khóa đang dùng được sửa. Giảng viên chỉ tải lên cho lớp mình và xem thêm tài liệu chung COMMON.
 
 | Method | Path | Ghi chú |
 |---|---|---|

@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.core.classes import get_registry
+from app.core.config import get_settings
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
@@ -40,6 +41,9 @@ def render(request: Request, name: str, context: dict[str, object]) -> HTMLRespo
 
 @router.get("/admin/ui", response_class=HTMLResponse, include_in_schema=False)
 async def admin_page(request: Request) -> HTMLResponse:
-    """Ticket inbox for instructors. Static shell: data is fetched with X-Admin-Key."""
-    classes = [{"id": c.id, "name": c.name} for c in get_registry().classes]
-    return render(request, "admin.html", {"classes": classes})
+    """Tickets, FAQ and course material for instructors. Static shell: data is fetched with X-Admin-Key."""
+    registry = get_registry()
+    classes = [{"id": c.id, "name": c.name} for c in registry.classes]
+    shared = {"id": registry.shared_scope.id, "name": registry.shared_scope.name}
+    context = {"classes": classes, "shared": shared, "max_upload_mb": get_settings().max_upload_mb}
+    return render(request, "admin.html", context)

@@ -97,6 +97,46 @@
   </section>
 </div>
 
+<section class="card" id="docs">
+  <h2>Tài liệu học liệu</h2>
+  <p class="muted">Tải lên giáo trình hoặc quy định (PDF, DOCX, XLSX, tối đa {{ max_upload_mb }} MB). Bot chỉ dùng phiên bản
+    đang dùng của mỗi tài liệu. Tải lên file cùng tên hoặc cùng mã tài liệu (dòng "Mã tài liệu:" đầu file) sẽ thay bản
+    cũ ngay khi nạp xong; file chứa mục của lớp khác bị từ chối. File chứa mục của nhiều lớp thì tải lên cho
+    {{ shared.id }} (chỉ quản trị).</p>
+  <div class="row">
+    <input type="file" id="u-file" accept=".pdf,.docx,.xlsx" aria-label="Chọn file tài liệu">
+    <select id="u-class" aria-label="Tải lên cho lớp">
+      {% for c in classes %}<option value="{{ c.id }}">{{ c.id }} – {{ c.name }}</option>{% endfor %}
+      <option value="{{ shared.id }}">{{ shared.id }} – {{ shared.name }}</option>
+    </select>
+    <button id="u-send" type="button">Tải lên &amp; nạp</button>
+  </div>
+  <div class="msg" id="u-msg"></div>
+  <div class="row">
+    <select id="d-class" aria-label="Lọc theo lớp">
+      <option value="">Tất cả lớp</option>
+      {% for c in classes %}<option value="{{ c.id }}">{{ c.id }}</option>{% endfor %}
+      <option value="{{ shared.id }}">{{ shared.id }}</option>
+    </select>
+    <select id="d-status" aria-label="Trạng thái tài liệu">
+      <option value="active" selected>Đang dùng</option>
+      <option value="">Mọi trạng thái</option>
+      <option value="superseded">Bản cũ đã thay</option>
+      <option value="failed">Nạp lỗi</option>
+      <option value="deleted">Đã xóa</option>
+    </select>
+    <button id="d-reload" type="button">Tải lại</button>
+  </div>
+  <div class="msg" id="docs-msg"></div>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Lớp</th><th>Mã tài liệu</th><th>File</th><th>Phiên bản</th><th>Trạng thái</th><th class="num">Số đoạn</th>
+        <th>Nạp lúc</th><th>Cảnh báo</th><th></th></tr></thead>
+      <tbody id="docs-rows"></tbody>
+    </table>
+  </div>
+</section>
+
 <section class="card">
   <h2>FAQ đã duyệt <span id="faq-count" class="muted"></span></h2>
   <p class="muted">Khi tài liệu của lớp có phiên bản mới hoặc bị xóa, các FAQ của lớp đó được đánh dấu "cần xem lại":
@@ -244,6 +284,92 @@
         h("td", { class: "q", title: e.detail || "" }, e.detail || ""), h("td", {}, e.user_ref || "–"))));
     } catch (e) { say($("s-msg"), e.message, "err"); }
   }
+  // ---------------------------------------------------------------- course material
+  const SHARED = {{ shared.id|tojson }}, MAX_MB = {{ max_upload_mb|tojson }};
+  const DOC_STATUS = { active: ["đang dùng", "b-answer"], superseded: ["bản cũ đã thay", ""], processing: ["đang nạp", "b-notice"],
+                       failed: ["nạp lỗi", "b-error"], deleted: ["đã xóa", ""] };
+  // An instructor may change only documents uploaded for their own class (not the shared ones), like the API (D-83).
+  const canEdit = (d) => ME && (ME.role === "admin" || d.origin_scope === ME.class_id);
+  function reportText(r) {
+    const lines = r.results.map((x) => {
+      const faqs = x.faqs_flagged ? ", " + x.faqs_flagged + " FAQ cần xem lại" : "";
+      switch (x.status) {
+        case "indexed": return x.scope + ": đã nạp v" + x.version + " (" + x.chunks + " đoạn)" +
+          (x.replaced && x.replaced.length ? ", thay file " + x.replaced.join(", ") : "") +
+          (x.flagged ? ", " + x.flagged + " đoạn có câu lệnh nhắm vào AI (đã đánh dấu)" : "") + faqs;
+        case "unchanged": return x.scope + ": nội dung không đổi (v" + x.version + "), không nạp lại";
+        case "removed": return x.scope + ": file không còn mục của phạm vi này, đã gỡ bản v" + x.version + faqs;
+        case "failed": return x.scope + ": nạp lỗi (" + (x.error || "?") + "), bản đang dùng vẫn giữ nguyên";
+        default: return x.scope + ": " + x.status;
+      }
+    });
+    if (r.warnings && r.warnings.length) lines.push("Cảnh báo khi đọc file: " + r.warnings.join("; "));
+    return r.filename + " → " + lines.join(" · ");
+  }
+  function docActions(d) {
+    if (!canEdit(d)) return h("span", { class: "muted" }, d.origin_scope === SHARED ? "tài liệu chung (quản trị)" : "");
+    const out = [];
+    if (d.status === "active" || d.status === "failed") {
+      out.push(h("button", { type: "button", class: "secondary", title: "Đọc lại bản gốc đã lưu và embed lại thành phiên bản mới",
+        onclick: () => docCall(d, "POST", "/reindex", "đã đánh lại chỉ mục") }, d.status === "failed" ? "Thử nạp lại" : "Đánh lại chỉ mục"));
+    }
+    if (d.status === "active") {
+      const del = h("button", { type: "button", class: "secondary" }, "Xóa");
+      del.addEventListener("click", () => {  // two clicks instead of a blocking confirm() dialog
+        if (del.dataset.armed) return docCall(d, "DELETE", "", "đã xóa, bot không dùng tài liệu này nữa");
+        del.dataset.armed = "1"; del.textContent = "Bấm lần nữa để xóa";
+        setTimeout(() => { delete del.dataset.armed; del.textContent = "Xóa"; }, 4000);
+      });
+      out.push(del);
+    }
+    return h("span", { class: "row" }, ...out);
+  }
+  async function docCall(d, method, suffix, done) {
+    try {
+      const resp = await api("/admin/documents/" + d.id + suffix, { method });
+      const data = await resp.json();
+      say($("docs-msg"), d.filename + ": " + (data.results ? reportText(data) : done), "ok");
+      loadDocs(true); loadFaqs();
+    } catch (e) { say($("docs-msg"), d.filename + ": " + e.message, "err"); }
+  }
+  async function loadDocs(keepMsg) {
+    const p = new URLSearchParams({ status: $("d-status").value });
+    if ($("d-class").value) p.set("class_id", $("d-class").value);
+    try {
+      const docs = await (await api("/admin/documents?" + p)).json();
+      $("docs-rows").replaceChildren(...(docs.length ? docs.map((d) => {
+        const [label, cls] = DOC_STATUS[d.status] || [d.status, ""];
+        const warn = (d.warnings || []).join("; ");
+        return h("tr", {},
+          h("td", {}, d.class_id + (d.origin_scope !== d.class_id ? " (từ " + d.origin_scope + ")" : "")),
+          h("td", {}, d.doc_code || "–"), h("td", { class: "q", title: d.filename }, d.filename),
+          h("td", {}, "v" + d.version), h("td", {}, h("span", { class: "badge " + cls }, label)),
+          h("td", { class: "num" }, String(d.chunks)),
+          h("td", {}, new Date(d.created_at).toLocaleString("vi-VN")),
+          h("td", { class: "q", title: warn }, warn || "–"), h("td", {}, docActions(d)));
+      }) : [h("tr", {}, h("td", { colspan: "9", class: "muted" }, "Không có tài liệu nào."))]));
+      if (!keepMsg) say($("docs-msg"), "");
+    } catch (e) { say($("docs-msg"), e.message, "err"); }
+  }
+  $("u-send").addEventListener("click", async () => {
+    const file = $("u-file").files[0];
+    if (!file) return say($("u-msg"), "Chọn một file PDF, DOCX hoặc XLSX trước.", "err");
+    if (file.size > MAX_MB * 1024 * 1024) return say($("u-msg"), "File lớn hơn " + MAX_MB + " MB.", "err");
+    const form = new FormData();
+    form.append("file", file); form.append("class_id", $("u-class").value);
+    $("u-send").disabled = true; say($("u-msg"), "Đang đọc file và tạo embedding…", "");
+    try {
+      const report = await (await api("/admin/documents", { method: "POST", body: form })).json();
+      say($("u-msg"), reportText(report), report.results.some((x) => x.status === "failed") ? "err" : "ok");
+      $("u-file").value = ""; loadDocs(); loadFaqs();
+    } catch (e) {
+      say($("u-msg"), e.message.startsWith("HTTP 422") ? "Không nạp được: " + e.message.replace(/^HTTP 422: /, "") : e.message, "err");
+    } finally { $("u-send").disabled = false; }
+  });
+  $("d-reload").addEventListener("click", () => loadDocs());
+  $("d-class").addEventListener("change", () => loadDocs());
+  $("d-status").addEventListener("change", () => loadDocs());
+
   // ---------------------------------------------------------------- approved FAQ (D-89)
   function faqStatus(f) {
     if (!f.active) return h("span", { class: "badge" }, "đã tắt");
@@ -315,7 +441,12 @@
       $(id).disabled = !!instructor;
     }
     $("sec-box").hidden = !(me && me.role === "admin");
-    if (me) { loadClasses(); loadTickets(); loadStats(); loadFaqs(); }
+    // Material: an instructor uploads for their own class only and lists their class + the shared material.
+    $("u-class").value = instructor ? me.class_id : $("u-class").value;
+    $("u-class").disabled = !!instructor;
+    for (const o of $("d-class").options) o.hidden = !!instructor && o.value !== "" && o.value !== me.class_id && o.value !== SHARED;
+    if (instructor && $("d-class").selectedOptions[0].hidden) $("d-class").value = "";
+    if (me) { loadClasses(); loadTickets(); loadStats(); loadDocs(); loadFaqs(); }
   }
   document.addEventListener("keychange", init);
   init();
