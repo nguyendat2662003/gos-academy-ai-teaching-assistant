@@ -5,6 +5,8 @@ Bot trả lời bằng tiếng Việt dựa trên học liệu đã duyệt củ
 không đủ căn cứ.
 
 - Đề bài: `docs/de_bai.pdf` (không đưa lên repo; đặt file vào đường dẫn này khi cần)
+- Hướng dẫn cài đặt & triển khai (Word, có ảnh chụp từng bước, giải thích từng thành phần):
+  [docs/HUONG_DAN_CAI_DAT.docx](docs/HUONG_DAN_CAI_DAT.docx)
 - Kiến trúc (sơ đồ Mermaid, luồng dữ liệu, cách ly lớp, vai trò & quyền): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Kiểm thử, kết quả 7 tình huống, đánh giá RAG: [docs/TEST_REPORT.md](docs/TEST_REPORT.md)
   ([SCENARIOS_RESULTS](docs/SCENARIOS_RESULTS.md), [EVAL_RESULTS](docs/EVAL_RESULTS.md))
