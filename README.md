@@ -4,7 +4,6 @@ AI trợ giảng trả lời câu hỏi học viên trong nhóm chat (giai đo�
 Bot trả lời bằng tiếng Việt dựa trên học liệu đã duyệt của **đúng lớp**, có dẫn nguồn, và chuyển giảng viên khi
 không đủ căn cứ.
 
-- Đề bài: `docs/de_bai.pdf` (không đưa lên repo; đặt file vào đường dẫn này khi cần)
 - Hướng dẫn cài đặt & triển khai (Word, có ảnh chụp từng bước, giải thích từng thành phần):
   [docs/HUONG_DAN_CAI_DAT.docx](docs/HUONG_DAN_CAI_DAT.docx)
 - Kiến trúc (sơ đồ Mermaid, luồng dữ liệu, cách ly lớp, vai trò & quyền): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
@@ -13,7 +12,7 @@ không đủ căn cứ.
 - Chi phí vận hành & điều kiện tích hợp Zalo thật: [docs/COST_AND_ZALO.md](docs/COST_AND_ZALO.md)
 - Quyết định kỹ thuật (D-01…D-89): [docs/DECISIONS.md](docs/DECISIONS.md)
 
-> Trạng thái: **hoàn thành MVP (Phase 0–7)**. 262 test offline xanh; trên stack thật với OpenAI: 7/7 tình
+> Trạng thái: **hoàn thành MVP**. 264 test offline xanh; trên stack thật với OpenAI: 7/7 tình
 > huống đạt, đánh giá 40 câu golden quyết định đúng 40/40, rò rỉ chéo lớp 0. Tích hợp Zalo thật mới ở mức khung
 > (cần quyền OA + GMF).
 
@@ -37,6 +36,9 @@ Mọi câu chữ gửi học viên nằm ở [app/agent/messages.py](app/agent/m
 [app/agent/prompts.py](app/agent/prompts.py).
 
 ## Yêu cầu
+
+> Lần đầu cài đặt: xem **[hướng dẫn cài đặt & triển khai](docs/HUONG_DAN_CAI_DAT.docx)** (Word, có ảnh chụp
+> từng bước, giải thích từng thành phần, triển khai lên máy chủ và xử lý sự cố). Phần dưới đây là bản tóm tắt.
 
 - Docker Desktop (có `docker compose`)
 - Python 3.11 (chỉ cần nếu chạy test/script từ máy host)
